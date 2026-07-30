@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -50,6 +51,30 @@ func TestRunConnectsConfiguredBrokersAndStopsCleanly(t *testing.T) {
 
 	if err := run(ctx, validLookup(), connector); err != nil {
 		t.Fatalf("run() error = %v, want nil", err)
+	}
+}
+
+func TestRunWithLogsRecordsBrokerCountWithoutBrokerAddresses(t *testing.T) {
+	connector := connectorFunc(func(_ context.Context, _ []string) (meteringworker.Session, error) {
+		return sessionFunc(func(context.Context) error { return nil }), nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var output bytes.Buffer
+
+	if err := runWithLogs(ctx, validLookup(), connector, &output); err != nil {
+		t.Fatalf("runWithLogs() error = %v", err)
+	}
+	raw := output.String()
+	for _, required := range []string{`"service":"metering-worker"`, `"brokerCount":2`, `"level":"INFO"`} {
+		if !strings.Contains(raw, required) {
+			t.Errorf("logs do not contain %q: %s", required, raw)
+		}
+	}
+	for _, forbidden := range []string{"broker-one:9092", "broker-two:9092", "postgres://"} {
+		if strings.Contains(raw, forbidden) {
+			t.Fatalf("logs contain forbidden value %q: %s", forbidden, raw)
+		}
 	}
 }
 

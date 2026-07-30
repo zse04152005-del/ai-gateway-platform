@@ -5,7 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
 )
 
 var version = "dev"
@@ -27,14 +29,19 @@ func realMain() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := run(ctx, os.LookupEnv, net.Listen); err != nil {
-		log.Printf("gateway stopped with error: %v", err)
+	if err := runWithLogs(ctx, os.LookupEnv, net.Listen, os.Stderr); err != nil {
+		bootstrapLogger("gateway").Error(ctx, "process stopped with error", observability.Fields{},
+			slog.String("errorCode", "GATEWAY_PROCESS_FAILED"))
 		return 1
 	}
 	return 0
 }
 
 func run(ctx context.Context, lookup config.LookupEnv, listen listenFunc) (runErr error) {
+	return runWithLogs(ctx, lookup, listen, io.Discard)
+}
+
+func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc, logWriter io.Writer) (runErr error) {
 	if ctx == nil {
 		return errors.New("gateway context must not be nil")
 	}
@@ -45,6 +52,10 @@ func run(ctx context.Context, lookup config.LookupEnv, listen listenFunc) (runEr
 	cfg, err := config.Load(lookup)
 	if err != nil {
 		return fmt.Errorf("load gateway configuration: %w", err)
+	}
+	logger, err := observability.NewJSON(logWriter, "gateway", version, cfg.Environment.LogLevel)
+	if err != nil {
+		return fmt.Errorf("create gateway logger: %w", err)
 	}
 	server, err := httpserver.NewServer(httpserver.Options{
 		ServiceName:       "gateway",
@@ -72,5 +83,15 @@ func run(ctx context.Context, lookup config.LookupEnv, listen listenFunc) (runEr
 		}
 	}()
 
-	return server.Serve(ctx, listener)
+	logger.Info(ctx, "HTTP server started", observability.Fields{},
+		slog.String("listenAddress", cfg.HTTP.GatewayAddr))
+	runErr = server.Serve(ctx, listener)
+	if runErr == nil {
+		logger.Info(ctx, "HTTP server stopped", observability.Fields{})
+	}
+	return runErr
+}
+
+func bootstrapLogger(service string) *observability.Logger {
+	return observability.MustNewJSON(os.Stderr, service, version, "info")
 }

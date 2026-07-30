@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -50,6 +51,28 @@ func TestRunStopsCleanlyWhenContextIsCanceled(t *testing.T) {
 
 	if err := run(ctx, validLookup(), listen); err != nil {
 		t.Fatalf("run() error = %v, want nil", err)
+	}
+}
+
+func TestRunWithLogsEmitsSafeStructuredLifecycleRecords(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var output bytes.Buffer
+	listen := func(network, _ string) (net.Listener, error) {
+		return net.Listen(network, "127.0.0.1:0")
+	}
+
+	if err := runWithLogs(ctx, validLookup(), listen, &output); err != nil {
+		t.Fatalf("runWithLogs() error = %v", err)
+	}
+	raw := output.String()
+	for _, required := range []string{`"service":"gateway"`, `"requestId":""`, `"traceId":""`, `"level":"INFO"`} {
+		if !strings.Contains(raw, required) {
+			t.Errorf("logs do not contain %q: %s", required, raw)
+		}
+	}
+	if strings.Contains(raw, "postgres://") {
+		t.Fatalf("logs contain database URL: %s", raw)
 	}
 }
 

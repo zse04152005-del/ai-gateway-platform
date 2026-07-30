@@ -13,6 +13,7 @@
 - 新增独立 control-plane 进程、基础管理状态路由，并抽取多进程共享 HTTP 生命周期。
 - 新增 metering-worker 事件总线 bootstrap、broker 回退和有限时会话关闭骨架。
 - 新增版本单调、校验和可验证、敏感字段受限的不可变业务配置 Snapshot 与热更新 Store。
+- 新增三进程统一 JSON 结构化日志、固定关联字段、递归敏感属性脱敏与安全 Bootstrap 错误码。
 
 ### Changed
 
