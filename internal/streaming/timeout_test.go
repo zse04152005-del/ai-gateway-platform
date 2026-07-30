@@ -158,6 +158,12 @@ func TestTimeoutControllerCallerCancellationAndTerminalErrorsReleaseStream(t *te
 	if controller.Failure() != nil || upstream.closes.Load() != 1 {
 		t.Fatalf("caller cancellation failure/closes = %+v/%d", controller.Failure(), upstream.closes.Load())
 	}
+	cancellationSnapshot := controller.Snapshot()
+	if cancellationSnapshot.CancellationObservedAt == nil || cancellationSnapshot.UpstreamReleasedAt == nil ||
+		cancellationSnapshot.CancellationPropagation < 0 ||
+		cancellationSnapshot.UpstreamReleasedAt.Before(*cancellationSnapshot.CancellationObservedAt) {
+		t.Fatalf("caller cancellation snapshot = %+v", cancellationSnapshot)
+	}
 
 	terminalController := newTestTimeoutController(t, testTimeoutOptions())
 	terminalUpstream := newTimeoutTestStream()

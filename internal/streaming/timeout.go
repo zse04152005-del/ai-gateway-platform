@@ -127,6 +127,9 @@ type TimeoutSnapshot struct {
 	HeadersReceivedAt         *time.Time
 	FirstModelEventAt         *time.Time
 	LastUpstreamEventAt       *time.Time
+	CancellationObservedAt    *time.Time
+	UpstreamReleasedAt        *time.Time
+	CancellationPropagation   time.Duration
 	UpstreamEvents            uint64
 	GatewayHeartbeats         uint64
 	ModelOutputStarted        bool
@@ -144,23 +147,26 @@ type TimeoutController struct {
 	cancel  context.CancelCauseFunc
 	options TimeoutOptions
 
-	mu                   sync.Mutex
-	startedAt            time.Time
-	headersReceivedAt    *time.Time
-	firstModelEventAt    *time.Time
-	lastUpstreamEventAt  *time.Time
-	upstreamEvents       uint64
-	gatewayHeartbeats    uint64
-	stream               provideradapter.ChunkStream
-	guarded              *GuardedStream
-	terminalErr          error
-	timeoutFailure       *TimeoutFailure
-	totalTimer           *time.Timer
-	firstTokenTimer      *time.Timer
-	noProgressTimer      *time.Timer
-	noProgressGeneration uint64
-	closeOnce            sync.Once
-	closeErr             error
+	mu                      sync.Mutex
+	startedAt               time.Time
+	headersReceivedAt       *time.Time
+	firstModelEventAt       *time.Time
+	lastUpstreamEventAt     *time.Time
+	cancellationObservedAt  *time.Time
+	upstreamReleasedAt      *time.Time
+	cancellationPropagation time.Duration
+	upstreamEvents          uint64
+	gatewayHeartbeats       uint64
+	stream                  provideradapter.ChunkStream
+	guarded                 *GuardedStream
+	terminalErr             error
+	timeoutFailure          *TimeoutFailure
+	totalTimer              *time.Timer
+	firstTokenTimer         *time.Timer
+	noProgressTimer         *time.Timer
+	noProgressGeneration    uint64
+	closeOnce               sync.Once
+	closeErr                error
 }
 
 // NewTimeoutController starts the total attempt allowance. Post-header timers
@@ -248,13 +254,16 @@ func (controller *TimeoutController) Snapshot() TimeoutSnapshot {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
 	snapshot := TimeoutSnapshot{
-		StartedAt:           controller.startedAt,
-		HeadersReceivedAt:   cloneTime(controller.headersReceivedAt),
-		FirstModelEventAt:   cloneTime(controller.firstModelEventAt),
-		LastUpstreamEventAt: cloneTime(controller.lastUpstreamEventAt),
-		UpstreamEvents:      controller.upstreamEvents,
-		GatewayHeartbeats:   controller.gatewayHeartbeats,
-		ModelOutputStarted:  controller.firstModelEventAt != nil,
+		StartedAt:               controller.startedAt,
+		HeadersReceivedAt:       cloneTime(controller.headersReceivedAt),
+		FirstModelEventAt:       cloneTime(controller.firstModelEventAt),
+		LastUpstreamEventAt:     cloneTime(controller.lastUpstreamEventAt),
+		CancellationObservedAt:  cloneTime(controller.cancellationObservedAt),
+		UpstreamReleasedAt:      cloneTime(controller.upstreamReleasedAt),
+		CancellationPropagation: controller.cancellationPropagation,
+		UpstreamEvents:          controller.upstreamEvents,
+		GatewayHeartbeats:       controller.gatewayHeartbeats,
+		ModelOutputStarted:      controller.firstModelEventAt != nil,
 	}
 	if controller.timeoutFailure != nil {
 		snapshot.TimedOut = true
@@ -304,27 +313,36 @@ func (stream *GuardedStream) Next(ctx context.Context) (adapter.NormalizedChunk,
 	stream.nextMu.Lock()
 	defer stream.nextMu.Unlock()
 	if terminalErr := stream.controller.currentTerminal(); terminalErr != nil {
+		stream.controller.closeAttached()
 		return adapter.NormalizedChunk{}, terminalErr
 	}
 	if err := contextCancellation(ctx); err != nil {
-		stream.controller.terminate(err, nil)
+		stream.controller.terminateCancellation(err)
 		return adapter.NormalizedChunk{}, err
 	}
 
 	nextCtx, nextCancel := context.WithCancelCause(stream.controller.ctx)
 	stopCaller := context.AfterFunc(ctx, func() {
-		nextCancel(contextCancellation(ctx))
+		cancellation := contextCancellation(ctx)
+		nextCancel(cancellation)
+		stream.controller.terminateCancellation(cancellation)
 	})
 	chunk, err := stream.upstream.Next(nextCtx)
 	stopCaller()
 	nextCancel(nil)
 
 	if terminalErr := stream.controller.currentTerminal(); terminalErr != nil {
+		stream.controller.closeAttached()
 		return adapter.NormalizedChunk{}, terminalErr
 	}
 	if ctx.Err() != nil {
 		cancellation := contextCancellation(ctx)
-		stream.controller.terminate(cancellation, nil)
+		stream.controller.terminateCancellation(cancellation)
+		return adapter.NormalizedChunk{}, cancellation
+	}
+	if stream.controller.ctx.Err() != nil {
+		cancellation := contextCancellation(stream.controller.ctx)
+		stream.controller.terminateCancellation(cancellation)
 		return adapter.NormalizedChunk{}, cancellation
 	}
 	if err != nil {
@@ -406,9 +424,22 @@ func (controller *TimeoutController) timeout(kind TimeoutKind, generation uint64
 }
 
 func (controller *TimeoutController) terminate(cause error, timeoutFailure *TimeoutFailure) {
+	controller.terminateObserved(cause, timeoutFailure, false)
+}
+
+func (controller *TimeoutController) terminateCancellation(cause error) {
+	controller.terminateObserved(cause, nil, true)
+}
+
+func (controller *TimeoutController) terminateObserved(
+	cause error,
+	timeoutFailure *TimeoutFailure,
+	cancellation bool,
+) {
 	if cause == nil {
 		cause = ErrStreamClosed
 	}
+	now := time.Now().UTC()
 	controller.mu.Lock()
 	if controller.terminalErr != nil {
 		controller.mu.Unlock()
@@ -416,6 +447,9 @@ func (controller *TimeoutController) terminate(cause error, timeoutFailure *Time
 	}
 	controller.terminalErr = cause
 	controller.timeoutFailure = cloneTimeoutFailure(timeoutFailure)
+	if cancellation {
+		controller.cancellationObservedAt = &now
+	}
 	controller.stopTimersLocked()
 	controller.mu.Unlock()
 	controller.cancel(cause)
@@ -447,8 +481,16 @@ func (controller *TimeoutController) closeAttached() {
 	}
 	controller.closeOnce.Do(func() {
 		err := upstream.Close()
+		released := time.Now().UTC()
 		controller.mu.Lock()
 		controller.closeErr = err
+		if controller.cancellationObservedAt != nil {
+			controller.upstreamReleasedAt = &released
+			controller.cancellationPropagation = released.Sub(*controller.cancellationObservedAt)
+			if controller.cancellationPropagation < 0 {
+				controller.cancellationPropagation = 0
+			}
+		}
 		controller.mu.Unlock()
 	})
 }

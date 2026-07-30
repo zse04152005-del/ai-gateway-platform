@@ -43,3 +43,15 @@ Every controller-owned timeout cancels the same Context used by upstream HTTP, c
 - `HeartbeatSnapshot` exposes only start/last-send times and counts, never model or Provider content.
 
 The eventual stream executor may run `Heartbeat.Run` in one explicitly owned Goroutine. `sse.Writer` serializes complete model and comment events, while the shared request Context guarantees cancellation and cleanup.
+
+## Client cancellation evidence
+
+`GuardedStream.Next` registers an `AfterFunc` on the client/request Context before entering a potentially blocking Adapter read. Cancellation atomically establishes the terminal cause, cancels the controller/upstream Context, and calls `ChunkStream.Close` to unblock a decoder even if the implementation has not yet returned from `Next`.
+
+The terminal return path calls the same `sync.Once`-protected close operation before returning to its caller. Therefore, after a cancelled `Next` returns, `TimeoutSnapshot` contains:
+
+- `CancellationObservedAt`;
+- `UpstreamReleasedAt`, recorded after Adapter `Close`/Body close returns;
+- non-negative `CancellationPropagation` between those two local lifecycle facts.
+
+These fields contain no endpoint, content, client cause text, or Provider response. A remote Provider's actual billing stop cannot be guaranteed by TCP cancellation; real-HTTP tests separately require the upstream server request Context to observe cancellation within one second.
