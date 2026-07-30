@@ -60,6 +60,8 @@
 
 - 虚拟 Key 只存哈希和前缀。
 - Provider Key 使用可替换的 KMS/Vault 信封加密接口。
+- 本地开发 Envelope 使用版本化 AES-256-GCM 与 Reference/Provider/Name AAD；生产禁止本地 Key，Deployment 复合外键禁止跨 Provider 引用。
+- Provider Secret 明文只在加密输入或上游请求构造的最短 `[]byte` 边界存在，用后清零；Locator、Ciphertext 和外部错误也不进入公开输出或遥测。
 - Key 不写入错误、日志、Trace、Fixture、命令历史和配置快照明文。
 
 ### 5.3 内容

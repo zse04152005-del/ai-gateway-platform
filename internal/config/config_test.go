@@ -19,6 +19,9 @@ func TestLoadValidDevelopmentConfig(t *testing.T) {
 	if len(cfg.Security.LocalEnvelopeKey) != 32 {
 		t.Fatalf("local envelope key length = %d, want 32", len(cfg.Security.LocalEnvelopeKey))
 	}
+	if cfg.Security.LocalEnvelopeKeyVersion != "local-v1" {
+		t.Fatalf("local envelope key version = %q", cfg.Security.LocalEnvelopeKeyVersion)
+	}
 	virtualKeyHashKey, err := cfg.ResolveVirtualKeyHashKey()
 	if err != nil || len(virtualKeyHashKey) != 32 {
 		t.Fatalf("ResolveVirtualKeyHashKey() length/error = %d/%v", len(virtualKeyHashKey), err)
@@ -134,6 +137,16 @@ func TestLoadRejectsInvalidVirtualKeyHashConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInvalidLocalEnvelopeVersion(t *testing.T) {
+	values := validEnvironment()
+	values["LOCAL_ENVELOPE_KEY_VERSION"] = "bad version"
+
+	_, err := Load(mapLookup(values))
+	if err == nil || !strings.Contains(err.Error(), "LOCAL_ENVELOPE_KEY_VERSION") {
+		t.Fatalf("Load() error = %v, want local envelope version validation", err)
+	}
+}
+
 func TestLoadRejectsUnsafeVirtualKeyAuthCacheTTL(t *testing.T) {
 	values := validEnvironment()
 	values["VIRTUAL_KEY_AUTH_CACHE_TTL"] = "31s"
@@ -157,6 +170,7 @@ func validEnvironment() map[string]string {
 		"CLICKHOUSE_HTTP_URL":          "http://localhost:8123",
 		"OTEL_EXPORTER_OTLP_ENDPOINT":  "http://localhost:4318",
 		"LOCAL_ENVELOPE_KEY":           strings.Repeat("00", 32),
+		"LOCAL_ENVELOPE_KEY_VERSION":   "local-v1",
 		"VIRTUAL_KEY_HASH_KEY_VERSION": "local-v1",
 	}
 }

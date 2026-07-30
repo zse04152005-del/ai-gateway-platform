@@ -88,10 +88,11 @@ type TelemetryConfig struct {
 
 // SecurityConfig contains development-only local cryptographic settings.
 type SecurityConfig struct {
-	LocalEnvelopeKey       []byte
-	VirtualKeyHashKey      []byte
-	VirtualKeyHashVersion  string
-	VirtualKeyAuthCacheTTL time.Duration
+	LocalEnvelopeKey        []byte
+	LocalEnvelopeKeyVersion string
+	VirtualKeyHashKey       []byte
+	VirtualKeyHashVersion   string
+	VirtualKeyAuthCacheTTL  time.Duration
 }
 
 var virtualKeyHashVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
@@ -162,10 +163,11 @@ func Load(lookup LookupEnv) (Config, error) {
 			OTLPEndpoint: valueOrDefault(lookup, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
 		},
 		Security: SecurityConfig{
-			LocalEnvelopeKey:       envelopeKey,
-			VirtualKeyHashKey:      virtualKeyHashKey,
-			VirtualKeyHashVersion:  valueOrDefault(lookup, "VIRTUAL_KEY_HASH_KEY_VERSION", "local-v1"),
-			VirtualKeyAuthCacheTTL: virtualKeyAuthCacheTTL,
+			LocalEnvelopeKey:        envelopeKey,
+			LocalEnvelopeKeyVersion: valueOrDefault(lookup, "LOCAL_ENVELOPE_KEY_VERSION", "local-v1"),
+			VirtualKeyHashKey:       virtualKeyHashKey,
+			VirtualKeyHashVersion:   valueOrDefault(lookup, "VIRTUAL_KEY_HASH_KEY_VERSION", "local-v1"),
+			VirtualKeyAuthCacheTTL:  virtualKeyAuthCacheTTL,
 		},
 	}
 
@@ -228,6 +230,9 @@ func (c Config) Validate() error {
 	}
 	if c.Environment.Name != EnvironmentProduction && len(c.Security.LocalEnvelopeKey) != 0 && len(c.Security.LocalEnvelopeKey) != 32 {
 		problems = append(problems, "LOCAL_ENVELOPE_KEY must decode to exactly 32 bytes")
+	}
+	if !virtualKeyHashVersionPattern.MatchString(c.Security.LocalEnvelopeKeyVersion) {
+		problems = append(problems, "LOCAL_ENVELOPE_KEY_VERSION has an invalid format")
 	}
 	if len(c.Security.VirtualKeyHashKey) != 0 && len(c.Security.VirtualKeyHashKey) != 32 {
 		problems = append(problems, "VIRTUAL_KEY_HASH_KEY must decode to exactly 32 bytes")

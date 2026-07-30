@@ -4,6 +4,13 @@
 
 本地 `.env` 由启动工具加载，应用本身不隐式搜索文件，避免生产环境意外读取工作目录中的秘密。
 
+## 本地 Provider 信封加密
+
+- `LOCAL_ENVELOPE_KEY`：仅 development 可用的 32 字节 AES-256-GCM Key（64 位十六进制）；生产环境配置该值会 fail closed。
+- `LOCAL_ENVELOPE_KEY_VERSION`：1～64 位非秘密版本标识，写入本地开发 Envelope，允许保留旧版本解密后重新加密。
+- `.env.example` 的全零值只用于启动模板，不得用于共享环境；真实 Provider 凭据在生产必须通过 Vault/KMS Resolver 获取。
+- 配置结构只提供 Key Material 和版本，业务 Secret 仍通过 `providersecret` 加密后入库；日志、错误与 Snapshot 均不得包含二者明文。
+
 ## 虚拟 Key 摘要配置
 
 - `VIRTUAL_KEY_HASH_KEY`：32 字节 HMAC 根密钥的 64 位十六进制编码。测试、预发布和生产必须显式配置。

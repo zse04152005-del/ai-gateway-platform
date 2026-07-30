@@ -84,6 +84,7 @@ Tenant 内的应用或成本归集边界。预算、模型白名单和虚拟 Key
 - 逻辑模型名称是租户内稳定 API 契约；Provider 物理模型名和 Endpoint 不向客户端暴露。
 - Binding 创建以及 LogicalModel/Deployment 能力更新都必须保持能力、Token 上限、数据保留模式和区域兼容。
 - 未知 Capability 字段必须拒绝，不能静默忽略后让路由误判能力。
+- Deployment 只保存同 Provider 的 Secret Reference ID；本地开发为认证加密 Envelope，生产只保存 Vault/KMS Locator。
 - 价格是独立版本，不能直接覆盖历史生效记录。
 
 ### Gateway Execution 聚合

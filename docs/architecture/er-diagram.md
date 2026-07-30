@@ -25,7 +25,8 @@ erDiagram
     PROJECT ||--o{ BUDGET_ACCOUNT : owns
     BUDGET_ACCOUNT ||--o{ BUDGET_RESERVATION : reserves
     GATEWAY_REQUEST ||--o{ BUDGET_RESERVATION : consumes
-    TENANT ||--o{ SECRET_REFERENCE : stores
+    PROVIDER ||--o{ SECRET_REFERENCE : owns
+    SECRET_REFERENCE ||--o{ DEPLOYMENT : authenticates
     TENANT ||--o{ CONFIG_VERSION : publishes
     TENANT ||--o{ AUDIT_LOG : records
 
@@ -187,10 +188,15 @@ erDiagram
     }
     SECRET_REFERENCE {
       uuid id PK
-      uuid tenant_id FK
+      uuid provider_id FK
       text name
+      text backend
+      text locator
       bytea ciphertext
+      bytea nonce
       text key_version
+      text status
+      bigint version
     }
     CONFIG_VERSION {
       uuid id PK

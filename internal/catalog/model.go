@@ -116,19 +116,20 @@ type LogicalModel struct {
 // Deployment is a physical provider model endpoint and its callable contract.
 // Credentials deliberately do not belong to this P04-T05 model.
 type Deployment struct {
-	ID            string
-	ProviderID    string
-	Code          string
-	PhysicalModel string
-	EndpointURL   string
-	Region        string
-	Capabilities  CapabilitySet
-	Status        Status
-	Version       int64
-	CreatedAt     time.Time
-	CreatedBy     string
-	UpdatedAt     time.Time
-	UpdatedBy     string
+	ID                string
+	ProviderID        string
+	Code              string
+	PhysicalModel     string
+	EndpointURL       string
+	Region            string
+	Capabilities      CapabilitySet
+	SecretReferenceID *string
+	Status            Status
+	Version           int64
+	CreatedAt         time.Time
+	CreatedBy         string
+	UpdatedAt         time.Time
+	UpdatedBy         string
 }
 
 // Binding maps a stable logical name to a compatible physical deployment.
@@ -241,6 +242,11 @@ func (deployment Deployment) Validate() error {
 	}
 	if err := deployment.Capabilities.Validate(); err != nil {
 		return err
+	}
+	if deployment.SecretReferenceID != nil {
+		if err := validateUUID("deployment.secret_reference_id", *deployment.SecretReferenceID); err != nil {
+			return err
+		}
 	}
 	return validateRecord("deployment", deployment.Status, deployment.Version, deployment.CreatedAt, deployment.CreatedBy, deployment.UpdatedAt, deployment.UpdatedBy)
 }
