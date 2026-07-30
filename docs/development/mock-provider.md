@@ -101,4 +101,4 @@ Mock 返回 OpenAI 风格错误：
 - `internal/mockprovider/handler_test.go` 通过真实 `httptest.Server` 覆盖每个场景、SSE Flush、截断连接、错误契约和取消。
 - `cmd/mock-provider/main_test.go` 覆盖配置先验失败、监听参数、结构化日志与 Context 停止。
 - `tests/integration/process_lifecycle_test.go` 在 Linux CI 构建真实二进制，验证 readiness、SIGTERM 退出码 0、JSON 日志和生产环境拒绝启动。
-- 后续 P05-T04/P05-T05 的 Mock Adapter 与 Conformance Suite 只能依赖本文件中的稳定场景，不得通过测试名分支或进程内捷径绕过 HTTP 协议。
+- P05-T04 的 Mock Adapter 已通过共享 HTTP 生命周期上的真实 `httptest.Server` 覆盖本文件全部场景，没有按测试名或进程内返回 Fixture；P05-T05 Conformance Suite 必须继续使用同一协议边界。

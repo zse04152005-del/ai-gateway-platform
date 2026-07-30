@@ -29,6 +29,7 @@
 - 新增本地 `mock-provider` 进程与确定性 OpenAI-compatible 场景协议，覆盖普通响应、SSE、固定/缓存 Usage、延迟、429、503、截断连接、错误 Chunk 和工具调用。
 - 新增供应商无关的 Normalized Request/Response/Chunk/Error/Usage 类型、不变量和深拷贝；严格区分 Usage 缺失与真实 0，以不可变原始 JSON + SHA-256 保留未知计量证据，并提供默认不暴露内容的结构化日志值。
 - 新增不可变 Provider Adapter Factory 注册表与运行时接口，按精确 Type 解析，并在启动/发布阶段聚合拒绝未知、非法或重复 Provider；Factory nil、身份漂移、Adapter 类型错配和敏感内部错误均 fail closed。
+- 新增真实 HTTP Mock Adapter：完整映射普通、SSE、工具、缓存/推理 Usage 与错误 Fixture；严格限制本地 Endpoint/Body/SSE，保留未知 Usage 证据，隔离未知 Stream Event，并在 Context 取消时关闭上游连接。
 
 ### Changed
 

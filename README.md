@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P05-T03：实现 Provider Adapter 注册表（进行中）`
+`P05-T04：实现 Mock Adapter（进行中）`
 
-P05-T01～T02 已交付确定性 Mock Provider 与供应商无关的请求、响应、流、错误和 Usage 事实类型；当前正在建立显式、不可变的 Adapter Factory 注册表，使未知协议类型在启动或 Catalog 发布时 fail closed，而不是延迟到生产请求才失败。
+P05-T01～T03 已交付确定性 Mock Provider、规范化事实类型与不可变 Factory 注册表；当前正在通过真实 HTTP 实现 Mock Adapter，重点验证普通/SSE、错误、工具调用、缓存/推理 Usage、未知计量证据和取消传播。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
