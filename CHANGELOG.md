@@ -21,6 +21,7 @@
 - 新增 Tenant/Project PostgreSQL 隔离根迁移，包含状态、配额引用、乐观锁、审计字段、租户内唯一约束及真实数据库约束测试。
 - 新增 Virtual API Key PostgreSQL 模型：仅持久化不可逆 32 字节 keyed digest 与安全前缀，数据库强制租户/项目隔离、授权覆盖、正整数限额和轮换/吊销生命周期。
 - 新增 Virtual Key 生命周期服务与管理 API：加密随机签发、一次性明文返回、HMAC-SHA-256 摘要、事务化单替代者轮换、幂等吊销和读取时派生过期，并以真实 PostgreSQL 并发测试验证。
+- 新增数据面 Virtual Key 认证中间件：严格 Bearer 解析、版本化 HMAC 常量时间验证、Tenant/Project/Key 状态决策、可信 Principal Context、有界正缓存与显式失效。
 
 ### Changed
 
@@ -31,3 +32,4 @@
 - 默认禁止提交本地环境文件、私钥、证书和运行数据。
 - Virtual API Key Schema 不提供明文、可逆密文或原始 Key 字段，并以复合外键阻止跨租户项目和轮换链。
 - 完整 Virtual Key 不进入领域 Record、数据库、查询 API、错误或日志；非开发环境缺少独立摘要密钥时控制面拒绝启动。
+- Gateway 删除客户端伪造的租户/项目/Key 身份 Header；所有凭据失败统一 401，数据库或 Keyring 不完整时 fail closed 为 503。

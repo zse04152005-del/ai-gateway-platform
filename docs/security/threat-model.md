@@ -30,11 +30,11 @@
 
 | ID | 类别 | 风险 | 等级 | 缓解 | 验证 |
 |---|---|---|---|---|---|
-| T-01 | Spoofing | 猜测、盗用或重放虚拟 Key | 高 | 强随机 Key、哈希、前缀、到期、轮换、限流 | Key 生命周期与重放测试 |
+| T-01 | Spoofing | 猜测、盗用或重放虚拟 Key | 高 | 强随机 Key、版本化 HMAC、常量时间比较、到期、轮换、统一 401 | Key 生命周期、认证与重放测试 |
 | T-02 | Tampering | 修改路由、价格或预算逃避治理 | 高 | 管理 RBAC、版本发布、审计、乐观锁 | 越权与并发更新测试 |
 | T-03 | Repudiation | 管理员否认配置/导出操作 | 高 | 追加审计、actor、reason、before/after、traceId | 审计完整性检查 |
 | T-04 | Information Disclosure | Key/Prompt 进入日志、Trace、错误 | 严重 | 默认不存正文、统一脱敏、日志测试 | 全仓/日志敏感模式扫描 |
-| T-05 | Information Disclosure | 跨租户读模型、用量或缓存 | 严重 | 服务端租户上下文、Repository 强制过滤、Cache Key 租户化 | 跨租户测试矩阵 |
+| T-05 | Information Disclosure | 跨租户读模型、用量或缓存 | 严重 | 数据库 Principal、删除客户端身份 Header、Repository 强制过滤、有界缓存与显式失效 | 认证伪造 Header、缓存失效与跨租户测试矩阵 |
 | T-06 | Elevation | 数据面 Key 调用管理 API | 严重 | 管理面独立身份与受众、路由隔离 | Token audience/role 测试 |
 | T-07 | SSRF | 管理员配置恶意 Provider 地址 | 严重 | 域名白名单、DNS/IP 校验、禁重定向、出站策略 | 回环/元数据/DNS 重绑定测试 |
 | T-08 | DoS | 超大正文、Header、SSE Chunk 或慢客户端 | 高 | 大小限制、有界缓冲、写超时、连接/并发限制 | 资源压力与慢客户端测试 |
@@ -52,6 +52,8 @@
 
 - 数据面虚拟 Key 与管理面 OIDC Token 使用不同验证器和 audience。
 - tenantId/projectId 从认证上下文得出，不信任请求参数。
+- 缺失、格式错误、未知、错误 Secret、吊销、过期和作用域禁用对外使用同一 401，不提供 Key 枚举 Oracle。
+- 认证正缓存只存摘要与作用域，支持按前缀失效；绝对过期/轮换宽限每次重新判断，TTL 是主动失效故障时的明确残余风险上界。
 - 导出、审计和明细请求使用更细权限。
 
 ### 5.2 密钥
@@ -87,4 +89,3 @@
 - Provider 是否实际停止生成无法完全由网关保证；需记录取消请求与上游结束证据。
 - Tokenizer 估算与供应商账单可能不同；必须标记来源并通过 P1 对账修正。
 - 供应商可能在相同模型别名下改变行为；P1 使用版本治理和评测门禁降低风险。
-

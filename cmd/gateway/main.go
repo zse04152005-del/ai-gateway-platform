@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -11,9 +12,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	_ "github.com/lib/pq"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/gateway"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
 )
 
@@ -57,14 +63,56 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create gateway logger: %w", err)
 	}
+	digestKey, err := cfg.ResolveVirtualKeyHashKey()
+	if err != nil {
+		return fmt.Errorf("resolve virtual credential digest key: %w", err)
+	}
+	keyring, err := keyauth.NewKeyring(cfg.Security.VirtualKeyHashVersion, digestKey, nil)
+	clear(digestKey)
+	if err != nil {
+		return fmt.Errorf("create virtual credential authentication keyring: %w", err)
+	}
+	database, err := sql.Open("postgres", cfg.Postgres.URL)
+	if err != nil {
+		return fmt.Errorf("open gateway database: %w", err)
+	}
+	database.SetMaxOpenConns(20)
+	database.SetMaxIdleConns(10)
+	database.SetConnMaxLifetime(30 * time.Minute)
+	defer func() {
+		if closeErr := database.Close(); closeErr != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("close gateway database: %w", closeErr))
+		}
+	}()
+	authenticationStore, err := keyauth.NewPostgresStore(database)
+	if err != nil {
+		return fmt.Errorf("create virtual credential authentication store: %w", err)
+	}
+	authenticationCache, err := keyauth.NewMemoryCache(
+		cfg.Security.VirtualKeyAuthCacheTTL,
+		10_000,
+		time.Now,
+	)
+	if err != nil {
+		return fmt.Errorf("create virtual credential authentication cache: %w", err)
+	}
+	authenticator, err := keyauth.NewAuthenticator(authenticationStore, keyring, authenticationCache, time.Now)
+	if err != nil {
+		return fmt.Errorf("create virtual credential authenticator: %w", err)
+	}
+	applicationHandler, err := gateway.NewHandler(authenticator)
+	if err != nil {
+		return fmt.Errorf("create gateway application handler: %w", err)
+	}
 	server, err := httpserver.NewServer(httpserver.Options{
-		ServiceName:       "gateway",
-		Version:           version,
-		NotReadyCode:      "GATEWAY_NOT_READY",
-		NotReadyMessage:   "Gateway is not ready",
-		ErrorType:         "gateway_error",
-		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
-		ShutdownTimeout:   cfg.HTTP.ShutdownTimeout,
+		ServiceName:        "gateway",
+		Version:            version,
+		NotReadyCode:       "GATEWAY_NOT_READY",
+		NotReadyMessage:    "Gateway is not ready",
+		ErrorType:          "gateway_error",
+		ReadHeaderTimeout:  cfg.HTTP.ReadHeaderTimeout,
+		ShutdownTimeout:    cfg.HTTP.ShutdownTimeout,
+		ApplicationHandler: applicationHandler,
 	})
 	if err != nil {
 		return fmt.Errorf("create gateway server: %w", err)

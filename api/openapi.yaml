@@ -257,7 +257,8 @@ components:
     virtualKey:
       type: http
       scheme: bearer
-      bearerFormat: agw_live_...
+      bearerFormat: agw_live_<safe-prefix>.<base64url-secret>
+      description: Full credential returned once by the control plane; tenant/project headers never establish identity.
     adminOidc:
       type: http
       scheme: bearer

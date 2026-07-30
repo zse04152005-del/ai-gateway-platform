@@ -10,6 +10,7 @@
 - `VIRTUAL_KEY_HASH_KEY_VERSION`：1～64 位非秘密版本标识，写入 `hash_key_version`，用于后续无停机摘要密钥轮换。
 - 仅 `development` 可在显式 Key 为空时，从 32 字节 `LOCAL_ENVELOPE_KEY` 使用 HMAC-SHA-256 和版本化上下文标签派生域分离 Key；其他环境 fail closed。
 - 配置加载、错误和日志都不能输出密钥值；调用方获得副本后在构造 Digester 后立即清零临时切片。
+- `VIRTUAL_KEY_AUTH_CACHE_TTL`：数据面正缓存 TTL，默认 2 秒，允许 `0s`～`30s`；`0s` 禁用缓存。它是吊销/状态变更主动失效失败时的最大陈旧上界，不能无限放大。
 
 ## 业务配置 Snapshot
 

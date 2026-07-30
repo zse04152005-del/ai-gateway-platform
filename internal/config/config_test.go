@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadValidDevelopmentConfig(t *testing.T) {
@@ -24,6 +25,9 @@ func TestLoadValidDevelopmentConfig(t *testing.T) {
 	}
 	if len(cfg.Kafka.Brokers) != 2 {
 		t.Fatalf("brokers = %v, want two brokers", cfg.Kafka.Brokers)
+	}
+	if cfg.Security.VirtualKeyAuthCacheTTL != 2*time.Second {
+		t.Fatalf("virtual key auth cache TTL = %v, want 2s", cfg.Security.VirtualKeyAuthCacheTTL)
 	}
 }
 
@@ -127,6 +131,16 @@ func TestLoadRejectsInvalidVirtualKeyHashConfiguration(t *testing.T) {
 	_, err := Load(mapLookup(values))
 	if err == nil || !strings.Contains(err.Error(), "VIRTUAL_KEY_HASH_KEY") {
 		t.Fatalf("Load() error = %v, want virtual-key hash validation", err)
+	}
+}
+
+func TestLoadRejectsUnsafeVirtualKeyAuthCacheTTL(t *testing.T) {
+	values := validEnvironment()
+	values["VIRTUAL_KEY_AUTH_CACHE_TTL"] = "31s"
+
+	_, err := Load(mapLookup(values))
+	if err == nil || !strings.Contains(err.Error(), "VIRTUAL_KEY_AUTH_CACHE_TTL") {
+		t.Fatalf("Load() error = %v, want cache TTL validation", err)
 	}
 }
 

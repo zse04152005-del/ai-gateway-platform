@@ -88,9 +88,10 @@ type TelemetryConfig struct {
 
 // SecurityConfig contains development-only local cryptographic settings.
 type SecurityConfig struct {
-	LocalEnvelopeKey      []byte
-	VirtualKeyHashKey     []byte
-	VirtualKeyHashVersion string
+	LocalEnvelopeKey       []byte
+	VirtualKeyHashKey      []byte
+	VirtualKeyHashVersion  string
+	VirtualKeyAuthCacheTTL time.Duration
 }
 
 var virtualKeyHashVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
@@ -126,6 +127,10 @@ func Load(lookup LookupEnv) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	virtualKeyAuthCacheTTL, err := durationValue(lookup, "VIRTUAL_KEY_AUTH_CACHE_TTL", 2*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		Environment: EnvironmentConfig{
@@ -157,9 +162,10 @@ func Load(lookup LookupEnv) (Config, error) {
 			OTLPEndpoint: valueOrDefault(lookup, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
 		},
 		Security: SecurityConfig{
-			LocalEnvelopeKey:      envelopeKey,
-			VirtualKeyHashKey:     virtualKeyHashKey,
-			VirtualKeyHashVersion: valueOrDefault(lookup, "VIRTUAL_KEY_HASH_KEY_VERSION", "local-v1"),
+			LocalEnvelopeKey:       envelopeKey,
+			VirtualKeyHashKey:      virtualKeyHashKey,
+			VirtualKeyHashVersion:  valueOrDefault(lookup, "VIRTUAL_KEY_HASH_KEY_VERSION", "local-v1"),
+			VirtualKeyAuthCacheTTL: virtualKeyAuthCacheTTL,
 		},
 	}
 
@@ -228,6 +234,9 @@ func (c Config) Validate() error {
 	}
 	if !virtualKeyHashVersionPattern.MatchString(c.Security.VirtualKeyHashVersion) {
 		problems = append(problems, "VIRTUAL_KEY_HASH_KEY_VERSION has an invalid format")
+	}
+	if c.Security.VirtualKeyAuthCacheTTL < 0 || c.Security.VirtualKeyAuthCacheTTL > 30*time.Second {
+		problems = append(problems, "VIRTUAL_KEY_AUTH_CACHE_TTL must be between 0s and 30s")
 	}
 
 	if len(problems) > 0 {

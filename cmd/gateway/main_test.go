@@ -88,9 +88,10 @@ func TestRunRejectsNilLifecycleInputs(t *testing.T) {
 
 func validLookup() config.LookupEnv {
 	return mapLookup(map[string]string{
-		"APP_ENV":           config.EnvironmentTest,
-		"GATEWAY_HTTP_ADDR": "127.0.0.1:18080",
-		"DATABASE_URL":      "postgres://localhost:5432/ai_gateway_test?sslmode=disable",
+		"APP_ENV":              config.EnvironmentTest,
+		"GATEWAY_HTTP_ADDR":    "127.0.0.1:18080",
+		"DATABASE_URL":         "postgres://localhost:5432/ai_gateway_test?sslmode=disable",
+		"VIRTUAL_KEY_HASH_KEY": strings.Repeat("11", 32),
 	})
 }
 
