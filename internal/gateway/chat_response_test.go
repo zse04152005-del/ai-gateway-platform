@@ -387,6 +387,7 @@ type stubExecutionRecorder struct {
 	startCalls            int
 	routingCalls          int
 	attemptCalls          int
+	streamingCalls        int
 	completionCalls       int
 	failureCalls          int
 	startErr              error
@@ -454,6 +455,20 @@ func (stub *stubExecutionRecorder) StartAttempt(
 		AttemptNo: request.AttemptCount, DeploymentID: deploymentID,
 		Status: execution.AttemptConnecting, Version: 2,
 	}, nil
+}
+
+func (stub *stubExecutionRecorder) MarkAttemptStreaming(
+	_ context.Context,
+	_ execution.GatewayRequest,
+	attempt execution.RouteAttempt,
+	providerRequestID string,
+) (execution.RouteAttempt, error) {
+	stub.streamingCalls++
+	stub.events = append(stub.events, "mark_attempt_streaming")
+	attempt.Status = execution.AttemptStreaming
+	attempt.ProviderRequestID = providerRequestID
+	attempt.Version += 2
+	return attempt, nil
 }
 
 func (stub *stubExecutionRecorder) CompleteAttempt(

@@ -29,6 +29,7 @@ type Recorder interface {
 	MarkRouting(context.Context, GatewayRequest) (GatewayRequest, error)
 	FailRequest(context.Context, GatewayRequest, RequestStatus, string) (GatewayRequest, error)
 	StartAttempt(context.Context, GatewayRequest, string) (GatewayRequest, RouteAttempt, error)
+	MarkAttemptStreaming(context.Context, GatewayRequest, RouteAttempt, string) (RouteAttempt, error)
 	CompleteAttempt(context.Context, GatewayRequest, RouteAttempt, AttemptOutcome) (GatewayRequest, RouteAttempt, error)
 }
 
@@ -178,7 +179,59 @@ func (recorder *PostgresRecorder) StartAttempt(
 	return updatedRequest, attempt, nil
 }
 
-// CompleteAttempt atomically records optional response headers, terminal attempt state, and parent terminal state.
+// MarkAttemptStreaming atomically records the first client-visible model output boundary.
+func (recorder *PostgresRecorder) MarkAttemptStreaming(
+	ctx context.Context,
+	request GatewayRequest,
+	attempt RouteAttempt,
+	providerRequestID string,
+) (RouteAttempt, error) {
+	if recorder == nil || recorder.database == nil || recorder.now == nil || ctx == nil ||
+		validateRequestHandle(request, RequestRunning) != nil ||
+		validateAttemptHandle(attempt, AttemptConnecting) != nil || attempt.RequestID != request.ID ||
+		(providerRequestID != "" && !providerRequestIDPattern.MatchString(providerRequestID)) {
+		return RouteAttempt{}, ErrInvalid
+	}
+	headerObservedAt := recorder.now().UTC()
+	firstByteAt := recorder.now().UTC()
+	if firstByteAt.Before(headerObservedAt) {
+		firstByteAt = headerObservedAt
+	}
+	transaction, err := recorder.database.BeginTx(ctx, nil)
+	if err != nil {
+		return RouteAttempt{}, newRecordError(ErrUnavailable, err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	headersReceived, err := scanAttempt(transaction.QueryRowContext(ctx, `
+		UPDATE app.route_attempts
+		SET status = 'headers_received', headers_received_at = $4,
+			provider_request_id = NULLIF($5, ''), version = version + 1, updated_at = $4
+		WHERE id = $1 AND request_id = $2 AND status = 'connecting' AND version = $3
+		RETURNING `+attemptColumns,
+		attempt.ID, request.ID, attempt.Version, headerObservedAt, providerRequestID,
+	))
+	if err != nil {
+		return RouteAttempt{}, mapDatabaseError(err)
+	}
+	streaming, err := scanAttempt(transaction.QueryRowContext(ctx, `
+		UPDATE app.route_attempts
+		SET status = 'streaming', first_byte_at = $4,
+			version = version + 1, updated_at = $4
+		WHERE id = $1 AND request_id = $2 AND status = 'headers_received' AND version = $3
+		RETURNING `+attemptColumns,
+		headersReceived.ID, request.ID, headersReceived.Version, firstByteAt,
+	))
+	if err != nil {
+		return RouteAttempt{}, mapDatabaseError(err)
+	}
+	if err := transaction.Commit(); err != nil {
+		return RouteAttempt{}, newRecordError(ErrUnavailable, err)
+	}
+	return streaming, nil
+}
+
+// CompleteAttempt atomically records a terminal attempt state and its parent terminal state.
 func (recorder *PostgresRecorder) CompleteAttempt(
 	ctx context.Context,
 	request GatewayRequest,
@@ -187,8 +240,7 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 ) (GatewayRequest, RouteAttempt, error) {
 	if recorder == nil || recorder.database == nil || recorder.now == nil || ctx == nil ||
 		validateRequestHandle(request, RequestRunning) != nil ||
-		validateAttemptHandle(attempt, AttemptConnecting) != nil || attempt.RequestID != request.ID ||
-		outcome.Validate() != nil {
+		validateAttemptCompletion(attempt, outcome) != nil || attempt.RequestID != request.ID {
 		return GatewayRequest{}, RouteAttempt{}, ErrInvalid
 	}
 	usageSummary, err := marshalUsageSummary(outcome.Usage)
@@ -203,7 +255,7 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 	defer func() { _ = transaction.Rollback() }()
 
 	currentAttempt := attempt
-	if outcome.HeadersReceived {
+	if attempt.Status == AttemptConnecting && outcome.HeadersReceived {
 		currentAttempt, err = scanAttempt(transaction.QueryRowContext(ctx, `
 			UPDATE app.route_attempts
 			SET status = 'headers_received', headers_received_at = $4,
@@ -220,12 +272,14 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 		UPDATE app.route_attempts
 		SET status = $4, ended_at = $5, end_reason = $6,
 			error_category = NULLIF($7, ''), error_code = NULLIF($8, ''),
-			usage_summary = $9::jsonb, version = version + 1, updated_at = $5
-		WHERE id = $1 AND request_id = $2 AND status = $3 AND version = $10
+			usage_summary = $9::jsonb,
+			provider_request_id = COALESCE(provider_request_id, NULLIF($10, '')),
+			version = version + 1, updated_at = $5
+		WHERE id = $1 AND request_id = $2 AND status = $3 AND version = $11
 		RETURNING `+attemptColumns,
 		currentAttempt.ID, request.ID, currentAttempt.Status, outcome.AttemptStatus,
 		now, outcome.EndReason, outcome.ErrorCategory, outcome.ErrorCode,
-		nullableJSON(usageSummary), currentAttempt.Version,
+		nullableJSON(usageSummary), outcome.ProviderRequestID, currentAttempt.Version,
 	))
 	if err != nil {
 		return GatewayRequest{}, RouteAttempt{}, mapDatabaseError(err)
@@ -245,6 +299,41 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 		return GatewayRequest{}, RouteAttempt{}, newRecordError(ErrUnavailable, err)
 	}
 	return completedRequest, completedAttempt, nil
+}
+
+func validateAttemptCompletion(attempt RouteAttempt, outcome AttemptOutcome) error {
+	if outcome.Validate() != nil {
+		return ErrInvalid
+	}
+	switch attempt.Status {
+	case AttemptConnecting:
+		if validateAttemptHandle(attempt, AttemptConnecting) != nil || outcome.AttemptStatus == AttemptPartialFailed {
+			return ErrInvalid
+		}
+	case AttemptStreaming:
+		if validateAttemptHandle(attempt, AttemptStreaming) != nil || attempt.HeadersReceivedAt == nil ||
+			attempt.FirstByteAt == nil || !outcome.HeadersReceived {
+			return ErrInvalid
+		}
+		switch outcome.AttemptStatus {
+		case AttemptSucceeded, AttemptPartialFailed, AttemptCancelled:
+		case AttemptCreated, AttemptConnecting, AttemptHeadersReceived, AttemptStreaming,
+			AttemptRetryableFailed, AttemptFailed:
+			return ErrInvalid
+		default:
+			return ErrInvalid
+		}
+		if attempt.ProviderRequestID != "" && outcome.ProviderRequestID != "" &&
+			attempt.ProviderRequestID != outcome.ProviderRequestID {
+			return ErrInvalid
+		}
+	case AttemptCreated, AttemptHeadersReceived, AttemptSucceeded, AttemptRetryableFailed,
+		AttemptFailed, AttemptPartialFailed, AttemptCancelled:
+		return ErrInvalid
+	default:
+		return ErrInvalid
+	}
+	return nil
 }
 
 type rowScanner interface {

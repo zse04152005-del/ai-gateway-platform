@@ -156,6 +156,83 @@ func TestGatewayExecutionLifecycle(t *testing.T) {
 		)
 	})
 
+	t.Run("client-visible stream failure preserves partial evidence", func(t *testing.T) {
+		request := startExecutionRequest(ctx, t, recorder, "integration-execution-partial-stream")
+		running, err := recorder.MarkRouting(ctx, request)
+		if err != nil {
+			t.Fatalf("MarkRouting(partial stream) error = %v", err)
+		}
+		running, connecting, err := recorder.StartAttempt(ctx, running, modelListDeploymentAID)
+		if err != nil {
+			t.Fatalf("StartAttempt(partial stream) error = %v", err)
+		}
+		partialUsage := adapter.NormalizedUsage{
+			OutputTokens: adapter.Tokens(4), Source: adapter.UsageSourceEstimated, Complete: false,
+		}
+		partialOutcome := execution.AttemptOutcome{
+			AttemptStatus: execution.AttemptPartialFailed, RequestStatus: execution.RequestPartialFailed,
+			HeadersReceived: true, EndReason: "stream_interrupted", ErrorCategory: "transport",
+			ErrorCode: "STREAM_INTERRUPTED", Usage: &partialUsage,
+		}
+		if _, _, err := recorder.CompleteAttempt(ctx, running, connecting, partialOutcome); !errors.Is(err, execution.ErrInvalid) {
+			t.Fatalf("connecting partial failure error = %v, want ErrInvalid", err)
+		}
+
+		streaming, err := recorder.MarkAttemptStreaming(ctx, running, connecting, "provider/stream-partial-1")
+		if err != nil {
+			t.Fatalf("MarkAttemptStreaming() error = %v", err)
+		}
+		if streaming.Status != execution.AttemptStreaming || streaming.Version != 4 ||
+			streaming.HeadersReceivedAt == nil || streaming.FirstByteAt == nil ||
+			streaming.FirstByteAt.Before(*streaming.HeadersReceivedAt) ||
+			streaming.ProviderRequestID != "provider/stream-partial-1" {
+			t.Fatalf("streaming attempt = %+v", streaming)
+		}
+		if _, err := recorder.MarkAttemptStreaming(ctx, running, connecting, "provider/stream-partial-1"); !errors.Is(err, execution.ErrConflict) {
+			t.Fatalf("stale MarkAttemptStreaming() error = %v, want ErrConflict", err)
+		}
+		for _, forbidden := range []execution.AttemptStatus{execution.AttemptRetryableFailed, execution.AttemptFailed} {
+			_, _, err := recorder.CompleteAttempt(ctx, running, streaming, execution.AttemptOutcome{
+				AttemptStatus: forbidden, RequestStatus: execution.RequestFailed, HeadersReceived: true,
+				EndReason: "stream_interrupted", ErrorCategory: "transport", ErrorCode: "STREAM_INTERRUPTED",
+			})
+			if !errors.Is(err, execution.ErrInvalid) {
+				t.Fatalf("streaming completion as %s error = %v, want ErrInvalid", forbidden, err)
+			}
+		}
+
+		completedRequest, completedAttempt, err := recorder.CompleteAttempt(ctx, running, streaming, partialOutcome)
+		if err != nil {
+			t.Fatalf("CompleteAttempt(partial stream) error = %v", err)
+		}
+		if completedRequest.Status != execution.RequestPartialFailed || completedRequest.Version != 4 ||
+			completedRequest.EndReason != "stream_interrupted" || completedRequest.EndedAt == nil {
+			t.Fatalf("partial request = %+v", completedRequest)
+		}
+		if completedAttempt.Status != execution.AttemptPartialFailed || completedAttempt.Version != 5 ||
+			completedAttempt.HeadersReceivedAt == nil || completedAttempt.FirstByteAt == nil ||
+			completedAttempt.EndedAt == nil || completedAttempt.EndReason != "stream_interrupted" ||
+			completedAttempt.ProviderRequestID != "provider/stream-partial-1" ||
+			completedAttempt.ErrorCategory != "transport" || completedAttempt.ErrorCode != "STREAM_INTERRUPTED" {
+			t.Fatalf("partial attempt = %+v", completedAttempt)
+		}
+		var summary map[string]any
+		if err := json.Unmarshal(completedAttempt.UsageSummary, &summary); err != nil {
+			t.Fatalf("decode partial UsageSummary: %v", err)
+		}
+		if _, present := summary["input_tokens"]; present || summary["output_tokens"] != float64(4) ||
+			summary["source"] != string(adapter.UsageSourceEstimated) || summary["complete"] != false {
+			t.Fatalf("partial usage summary = %#v", summary)
+		}
+		assertExecutionEvents(ctx, t, database, "integration-execution-partial-stream", completedAttempt.ID,
+			[]string{"authorized", "routing", "running", "partial_failed"},
+			[]string{"created", "connecting", "headers_received", "streaming", "partial_failed"},
+		)
+		if _, _, err := recorder.CompleteAttempt(ctx, running, streaming, partialOutcome); !errors.Is(err, execution.ErrConflict) {
+			t.Fatalf("terminal overwrite error = %v, want ErrConflict", err)
+		}
+	})
+
 	t.Run("CAS and trusted scope constraints reject stale or mixed facts", func(t *testing.T) {
 		request := startExecutionRequest(ctx, t, recorder, executionConflictRequestID)
 		if _, err := recorder.MarkRouting(ctx, request); err != nil {

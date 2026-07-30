@@ -100,3 +100,48 @@ func TestDatabaseErrorsMapToStableKindsWithoutLeaking(t *testing.T) {
 		t.Fatalf("unavailable mapping = %q", mapped)
 	}
 }
+
+func TestAttemptCompletionStateProtectsClientVisibleOutput(t *testing.T) {
+	observedAt := time.Date(2026, 7, 30, 4, 5, 6, 0, time.UTC)
+	usage := estimatedUsage()
+	connecting := RouteAttempt{
+		ID: "60000000-0000-4000-8000-000000000001", RequestID: testRequestID,
+		AttemptNo: 1, DeploymentID: testDeploymentID, Status: AttemptConnecting, Version: 2,
+	}
+	streaming := connecting
+	streaming.Status = AttemptStreaming
+	streaming.Version = 4
+	streaming.HeadersReceivedAt = &observedAt
+	streaming.FirstByteAt = &observedAt
+	streaming.ProviderRequestID = "provider/stream-1"
+	partial := AttemptOutcome{
+		AttemptStatus: AttemptPartialFailed, RequestStatus: RequestPartialFailed, HeadersReceived: true,
+		EndReason: "stream_interrupted", ErrorCategory: "transport", ErrorCode: "STREAM_INTERRUPTED",
+		Usage: &usage,
+	}
+	if err := validateAttemptCompletion(streaming, partial); err != nil {
+		t.Fatalf("valid streaming partial completion error = %v", err)
+	}
+	if err := validateAttemptCompletion(connecting, partial); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("connecting partial completion error = %v, want ErrInvalid", err)
+	}
+	for _, status := range []AttemptStatus{AttemptRetryableFailed, AttemptFailed} {
+		outcome := AttemptOutcome{
+			AttemptStatus: status, RequestStatus: RequestFailed, HeadersReceived: true,
+			EndReason: "stream_interrupted", ErrorCategory: "transport", ErrorCode: "STREAM_INTERRUPTED",
+		}
+		if err := validateAttemptCompletion(streaming, outcome); !errors.Is(err, ErrInvalid) {
+			t.Errorf("streaming completion as %s error = %v, want ErrInvalid", status, err)
+		}
+	}
+	withoutFirstByte := streaming
+	withoutFirstByte.FirstByteAt = nil
+	if err := validateAttemptCompletion(withoutFirstByte, partial); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("streaming without first byte error = %v, want ErrInvalid", err)
+	}
+	mismatchedProvider := partial
+	mismatchedProvider.ProviderRequestID = "provider/stream-2"
+	if err := validateAttemptCompletion(streaming, mismatchedProvider); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("provider identity replacement error = %v, want ErrInvalid", err)
+	}
+}

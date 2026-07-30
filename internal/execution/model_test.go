@@ -65,6 +65,7 @@ func TestAttemptOutcomeValidationMatrix(t *testing.T) {
 		{AttemptStatus: AttemptFailed, RequestStatus: RequestFailed, EndReason: "failed", ProviderRequestID: "unsafe provider id", ErrorCategory: "transport", ErrorCode: "TRANSPORT_FAILED"},
 		{AttemptStatus: AttemptFailed, RequestStatus: RequestFailed, EndReason: "failed", ProviderRequestID: "provider-request-without-headers", ErrorCategory: "transport", ErrorCode: "TRANSPORT_FAILED"},
 		{AttemptStatus: AttemptRetryableFailed, RequestStatus: RequestFailed, EndReason: "failed", ErrorCategory: "transport", ErrorCode: "TRANSPORT_FAILED", Usage: &usage},
+		{AttemptStatus: AttemptPartialFailed, RequestStatus: RequestPartialFailed, EndReason: "stream_interrupted", ErrorCategory: "transport", ErrorCode: "STREAM_INTERRUPTED", Usage: &usage},
 		{AttemptStatus: AttemptCancelled, RequestStatus: RequestCancelled, EndReason: "client_cancelled", ErrorCategory: "transport", ErrorCode: "CLIENT_CANCELLED"},
 	}
 	for index, outcome := range invalid {
