@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('bootstrap', 'mod-verify', 'compose-up', 'compose-down', 'gateway', 'control-plane', 'metering-worker', 'test', 'test-race', 'build', 'check-env', 'fmt', 'fmt-check', 'lint', 'vuln', 'ci-lint', 'secret-scan', 'check', 'migrate-validate', 'migrate-up', 'migrate-down', 'migrate-version')]
+    [ValidateSet('bootstrap', 'mod-verify', 'compose-up', 'compose-down', 'gateway', 'control-plane', 'metering-worker', 'test', 'test-race', 'test-integration', 'build', 'check-env', 'fmt', 'fmt-check', 'lint', 'vuln', 'ci-lint', 'secret-scan', 'check', 'migrate-validate', 'migrate-up', 'migrate-down', 'migrate-version')]
     [string]$Action
 )
 
@@ -157,6 +157,17 @@ switch ($Action) {
         Push-Location $ProjectRoot
         try { Invoke-Checked go 'test' '-race' '-count=1' './...' } finally { Pop-Location }
     }
+    'test-integration' {
+        Require-Command go
+        Push-Location $ProjectRoot
+        try {
+            $IntegrationArguments = @('test', '-count=1', '-tags=integration', '-timeout=2m', './tests/integration/...')
+            if ((& go 'env' 'GOOS') -ne 'windows') {
+                $IntegrationArguments = @('test', '-race') + $IntegrationArguments[1..($IntegrationArguments.Count - 1)]
+            }
+            Invoke-Checked go @IntegrationArguments
+        } finally { Pop-Location }
+    }
     'build' {
         Require-Command go
         Push-Location $ProjectRoot
@@ -179,6 +190,7 @@ switch ($Action) {
             Invoke-Checked go 'vet' './...'
             Invoke-Checked go 'tool' 'golangci-lint' 'config' 'verify'
             Invoke-Checked go 'tool' 'golangci-lint' 'run' '--timeout=5m' './...'
+            Invoke-Checked go 'tool' 'golangci-lint' 'run' '--build-tags=integration' '--timeout=5m' './tests/integration/...'
         } finally { Pop-Location }
     }
     'vuln' {
@@ -204,6 +216,7 @@ switch ($Action) {
             Invoke-Checked go 'vet' './...'
             Invoke-Checked go 'tool' 'golangci-lint' 'config' 'verify'
             Invoke-Checked go 'tool' 'golangci-lint' 'run' '--timeout=5m' './...'
+            Invoke-Checked go 'tool' 'golangci-lint' 'run' '--build-tags=integration' '--timeout=5m' './tests/integration/...'
             Invoke-Checked go 'test' '-count=1' './...'
             Invoke-Checked go 'build' '-buildvcs=false' './...'
             Invoke-Checked go 'tool' 'govulncheck' './...'
