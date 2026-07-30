@@ -1,0 +1,9 @@
+# P04-T02 synthetic, non-secret key_prefix values. Each exemption is pinned to
+# the exact initial fixture finding; no rule, path, commit, or future finding is
+# globally excluded.
+5adc7ddbdc4ebc75b555c97c1e2145838447e314:tests/integration/virtual_api_key_schema_test.go:generic-api-key:61
+5adc7ddbdc4ebc75b555c97c1e2145838447e314:tests/integration/virtual_api_key_schema_test.go:generic-api-key:119
+5adc7ddbdc4ebc75b555c97c1e2145838447e314:tests/integration/virtual_api_key_schema_test.go:generic-api-key:137
+5adc7ddbdc4ebc75b555c97c1e2145838447e314:tests/integration/virtual_api_key_schema_test.go:generic-api-key:151
+5adc7ddbdc4ebc75b555c97c1e2145838447e314:tests/integration/virtual_api_key_schema_test.go:generic-api-key:228
+5adc7ddbdc4ebc75b555c97c1e2145838447e314:tests/integration/virtual_api_key_schema_test.go:generic-api-key:240

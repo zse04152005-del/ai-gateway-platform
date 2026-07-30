@@ -59,7 +59,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 		virtualKeyOneID,
 		virtualKeyTenantOneID,
 		virtualKeyProjectOneID,
-		"agw_live_primary001",
+		"agw_live_00000001",
 		0x11,
 		pq.Array(allowedModels),
 		`{"rpm":120,"tpm":100000,"concurrency":8}`,
@@ -105,25 +105,25 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_live_shorthash1", bytes.Repeat([]byte{0x22}, 31), "hmac-v1", nil, nil, 103,
+		"agw_live_00000002", bytes.Repeat([]byte{0x22}, 31), "hmac-v1", nil, nil, 103,
 	)
 	expectConstraint(t, err, "virtual_api_keys_secret_hash_length")
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectTwoID,
-		"agw_live_crosstenant1", bytes.Repeat([]byte{0x23}, 32), "hmac-v1", nil, nil, 104,
+		"agw_live_00000003", bytes.Repeat([]byte{0x23}, 32), "hmac-v1", nil, nil, 104,
 	)
 	expectConstraint(t, err, "virtual_api_keys_project_fk")
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_live_primary001", bytes.Repeat([]byte{0x24}, 32), "hmac-v1", nil, nil, 105,
+		"agw_live_00000001", bytes.Repeat([]byte{0x24}, 32), "hmac-v1", nil, nil, 105,
 	)
 	expectConstraint(t, err, "virtual_api_keys_prefix_unique")
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_live_duplicatehash", bytes.Repeat([]byte{0x11}, 32), "hmac-v1", nil, nil, 106,
+		"agw_live_00000004", bytes.Repeat([]byte{0x11}, 32), "hmac-v1", nil, nil, 106,
 	)
 	expectConstraint(t, err, "virtual_api_keys_hash_unique")
 
@@ -135,35 +135,35 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_test_dupeallow1", bytes.Repeat([]byte{0x26}, 32), "hmac-v1",
+		"agw_test_00000005", bytes.Repeat([]byte{0x26}, 32), "hmac-v1",
 		pq.Array([]string{"chat.default", "CHAT.DEFAULT"}), nil, 108,
 	)
 	expectConstraint(t, err, "virtual_api_keys_allowed_models_valid")
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_test_badmodel01", bytes.Repeat([]byte{0x27}, 32), "hmac-v1",
+		"agw_test_00000006", bytes.Repeat([]byte{0x27}, 32), "hmac-v1",
 		pq.Array([]string{"chat model with spaces"}), nil, 109,
 	)
 	expectConstraint(t, err, "virtual_api_keys_allowed_models_valid")
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_test_badlimit01", bytes.Repeat([]byte{0x28}, 32), "hmac-v1", nil,
+		"agw_test_00000007", bytes.Repeat([]byte{0x28}, 32), "hmac-v1", nil,
 		`{"rpm":1,"burst":2}`, 110,
 	)
 	expectConstraint(t, err, "virtual_api_keys_limits_valid")
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_test_zerolimit1", bytes.Repeat([]byte{0x29}, 32), "hmac-v1", nil,
+		"agw_test_00000008", bytes.Repeat([]byte{0x29}, 32), "hmac-v1", nil,
 		`{"concurrency":0}`, 111,
 	)
 	expectConstraint(t, err, "virtual_api_keys_limits_valid")
 
 	_, err = database.ExecContext(ctx, insertVirtualIdentityStatement,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_test_floatlimit", bytes.Repeat([]byte{0x2a}, 32), "hmac-v1", nil,
+		"agw_test_00000009", bytes.Repeat([]byte{0x2a}, 32), "hmac-v1", nil,
 		`{"tpm":1.5}`, 112,
 	)
 	expectConstraint(t, err, "virtual_api_keys_limits_valid")
@@ -172,7 +172,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 		INSERT INTO app.virtual_api_keys (
 			id, tenant_id, project_id, key_prefix, secret_hash, hash_key_version,
 			status, created_by, updated_by
-		) VALUES ($1, $2, $3, 'agw_test_nograce001', $4, 'hmac-v1', 'rotating', 'integration:test', 'integration:test')`,
+		) VALUES ($1, $2, $3, 'agw_test_00000010', $4, 'hmac-v1', 'rotating', 'integration:test', 'integration:test')`,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID, bytes.Repeat([]byte{0x2b}, 32),
 	)
 	expectConstraint(t, err, "virtual_api_keys_lifecycle_valid")
@@ -181,7 +181,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 		INSERT INTO app.virtual_api_keys (
 			id, tenant_id, project_id, key_prefix, secret_hash, hash_key_version,
 			status, created_by, updated_by
-		) VALUES ($1, $2, $3, 'agw_test_norevoker1', $4, 'hmac-v1', 'revoked', 'integration:test', 'integration:test')`,
+		) VALUES ($1, $2, $3, 'agw_test_00000011', $4, 'hmac-v1', 'revoked', 'integration:test', 'integration:test')`,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID, bytes.Repeat([]byte{0x2c}, 32),
 	)
 	expectConstraint(t, err, "virtual_api_keys_lifecycle_valid")
@@ -190,7 +190,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 		INSERT INTO app.virtual_api_keys (
 			id, tenant_id, project_id, key_prefix, secret_hash, hash_key_version,
 			expires_at, created_by, updated_by
-		) VALUES ($1, $2, $3, 'agw_test_expired001', $4, 'hmac-v1', CURRENT_TIMESTAMP - INTERVAL '1 second', 'integration:test', 'integration:test')`,
+		) VALUES ($1, $2, $3, 'agw_test_00000012', $4, 'hmac-v1', CURRENT_TIMESTAMP - INTERVAL '1 second', 'integration:test', 'integration:test')`,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID, bytes.Repeat([]byte{0x2d}, 32),
 	)
 	expectConstraint(t, err, "virtual_api_keys_expiry_time_valid")
@@ -199,7 +199,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 		INSERT INTO app.virtual_api_keys (
 			id, tenant_id, project_id, key_prefix, secret_hash, hash_key_version,
 			rotated_from_id, created_by, updated_by
-		) VALUES ($1, $2, $3, 'agw_live_selfrotate1', $4, 'hmac-v1', $1, 'integration:test', 'integration:test')`,
+		) VALUES ($1, $2, $3, 'agw_live_00000013', $4, 'hmac-v1', $1, 'integration:test', 'integration:test')`,
 		virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID, bytes.Repeat([]byte{0x2e}, 32),
 	)
 	expectConstraint(t, err, "virtual_api_keys_rotation_not_self")
@@ -214,7 +214,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 	}
 	insertVirtualAPIKey(
 		ctx, t, database, virtualKeyThreeID, virtualKeyTenantTwoID, virtualKeyProjectTwoID,
-		"agw_live_crossrotate", 0x30, nil, nil, 113,
+		"agw_live_00000014", 0x30, nil, nil, 113,
 	)
 	_, err = database.ExecContext(ctx, `
 		UPDATE app.virtual_api_keys
@@ -226,7 +226,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 
 	insertVirtualAPIKey(
 		ctx, t, database, virtualKeyTwoID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_live_rotated001", 0x31, nil, nil, 114,
+		"agw_live_00000015", 0x31, nil, nil, 114,
 	)
 	_, err = database.ExecContext(ctx, `
 		UPDATE app.virtual_api_keys
@@ -238,7 +238,7 @@ func TestVirtualAPIKeySchemaConstraints(t *testing.T) {
 
 	insertVirtualAPIKey(
 		ctx, t, database, virtualKeyFourID, virtualKeyTenantOneID, virtualKeyProjectOneID,
-		"agw_live_secondrepl1", 0x32, nil, nil, 115,
+		"agw_live_00000016", 0x32, nil, nil, 115,
 	)
 	_, err = database.ExecContext(ctx, `
 		UPDATE app.virtual_api_keys SET rotated_from_id = $1 WHERE id = $2`,
