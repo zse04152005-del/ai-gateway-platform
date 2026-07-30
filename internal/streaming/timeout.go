@@ -175,9 +175,11 @@ func NewTimeoutController(parent context.Context, options TimeoutOptions) (*Time
 	controller := &TimeoutController{
 		ctx: ctx, cancel: cancel, options: options, startedAt: time.Now().UTC(),
 	}
+	controller.mu.Lock()
 	controller.totalTimer = time.AfterFunc(options.TotalTimeout, func() {
 		controller.timeout(TimeoutTotal, 0)
 	})
+	controller.mu.Unlock()
 	return controller, nil
 }
 
