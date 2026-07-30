@@ -31,16 +31,30 @@ erDiagram
 
     TENANT {
       uuid id PK
+      text slug UK
       text name
       text status
+      text quota_policy_ref
+      bigint version
       timestamptz created_at
+      text created_by
+      timestamptz updated_at
+      text updated_by
+      timestamptz disabled_at
     }
     PROJECT {
       uuid id PK
       uuid tenant_id FK
+      text slug
       text name
       text status
+      text quota_policy_ref
       bigint version
+      timestamptz created_at
+      text created_by
+      timestamptz updated_at
+      text updated_by
+      timestamptz disabled_at
     }
     VIRTUAL_API_KEY {
       uuid id PK
@@ -190,7 +204,9 @@ erDiagram
 
 ## 2. 关键约束
 
-- `project(tenant_id, name)` 唯一。
+- `tenant(slug)` 全局唯一；`project(tenant_id, slug)` 唯一。
+- `project(tenant_id, lower(name))` 大小写不敏感唯一。
+- `project(tenant_id, id)` 唯一，供后续子表建立租户隔离复合外键。
 - `virtual_api_key(prefix)` 唯一；Hash 使用定长安全类型。
 - `logical_model(tenant_id, name)` 唯一。
 - `model_deployment(logical_model_id, deployment_id)` 唯一。
@@ -224,4 +240,3 @@ erDiagram
 - BudgetAccount 预留使用原子条件更新或短事务行锁。
 - Ledger 通过 eventId 唯一约束实现最终幂等。
 - 已发布配置/价格记录不更新，创建新版本。
-

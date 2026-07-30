@@ -18,6 +18,7 @@
 - 新增安全 Request ID 与 W3C Trace Context 中间件，支持冲突重生成、近期重放窗口、响应回传和跨进程 HTTP 传播。
 - 新增请求/流连接注册表：关停时立即取消流、有限排空普通请求、超时强制取消，并为 Worker Session Close 增加外层 deadline 保证。
 - 新增三进程真实二进制生命周期集成测试模板，并统一本地/CI 的 integration build-tag、race 与 lint 入口。
+- 新增 Tenant/Project PostgreSQL 隔离根迁移，包含状态、配额引用、乐观锁、审计字段、租户内唯一约束及真实数据库约束测试。
 
 ### Changed
 
