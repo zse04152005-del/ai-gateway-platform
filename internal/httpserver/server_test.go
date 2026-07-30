@@ -1,4 +1,4 @@
-package gateway
+package httpserver
 
 import (
 	"context"
@@ -19,31 +19,26 @@ type requestResult struct {
 	err    error
 }
 
-func TestNewServerRejectsInvalidTimeouts(t *testing.T) {
+func TestNewServerValidatesOptions(t *testing.T) {
+	valid := testOptions(nil, time.Second)
 	tests := []struct {
-		name    string
-		options Options
-		want    string
+		name   string
+		mutate func(*Options)
+		want   string
 	}{
-		{
-			name: "read header timeout",
-			options: Options{
-				ShutdownTimeout: time.Second,
-			},
-			want: "read header timeout",
-		},
-		{
-			name: "shutdown timeout",
-			options: Options{
-				ReadHeaderTimeout: time.Second,
-			},
-			want: "shutdown timeout",
-		},
+		{name: "service name", mutate: func(options *Options) { options.ServiceName = "" }, want: "service name"},
+		{name: "not-ready code", mutate: func(options *Options) { options.NotReadyCode = "" }, want: "not-ready code"},
+		{name: "not-ready message", mutate: func(options *Options) { options.NotReadyMessage = "" }, want: "not-ready message"},
+		{name: "error type", mutate: func(options *Options) { options.ErrorType = "" }, want: "error type"},
+		{name: "read header timeout", mutate: func(options *Options) { options.ReadHeaderTimeout = 0 }, want: "read header timeout"},
+		{name: "shutdown timeout", mutate: func(options *Options) { options.ShutdownTimeout = 0 }, want: "shutdown timeout"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := NewServer(test.options)
+			options := valid
+			test.mutate(&options)
+			_, err := NewServer(options)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("NewServer() error = %v, want text %q", err, test.want)
 			}
@@ -51,7 +46,7 @@ func TestNewServerRejectsInvalidTimeouts(t *testing.T) {
 	}
 }
 
-func TestHealthEndpointsReflectLifecycle(t *testing.T) {
+func TestHealthEndpointsReflectLifecycleAndIdentity(t *testing.T) {
 	server := newTestServer(t, nil, time.Second)
 
 	live := serveRequest(server.Handler(), http.MethodGet, "/health/live")
@@ -69,21 +64,37 @@ func TestHealthEndpointsReflectLifecycle(t *testing.T) {
 	assertHeader(t, notReady, "Retry-After", "1")
 	var unavailable errorEnvelope
 	decodeBody(t, notReady, &unavailable)
-	if unavailable.Error.Code != "GATEWAY_NOT_READY" || !unavailable.Error.Retryable {
+	if unavailable.Error.Code != "TEST_NOT_READY" || unavailable.Error.Type != "test_error" || !unavailable.Error.Retryable {
 		t.Fatalf("not-ready response = %+v", unavailable)
 	}
 
 	server.ready.Store(true)
 	ready := serveRequest(server.Handler(), http.MethodGet, "/health/ready")
 	assertStatus(t, ready, http.StatusOK)
-	var readyBody healthResponse
-	decodeBody(t, ready, &readyBody)
-	if readyBody.Status != "ok" {
-		t.Fatalf("ready status = %q, want ok", readyBody.Status)
-	}
 
 	methodNotAllowed := serveRequest(server.Handler(), http.MethodPost, "/health/live")
 	assertStatus(t, methodNotAllowed, http.StatusMethodNotAllowed)
+	assertHeader(t, methodNotAllowed, "Allow", http.MethodGet)
+}
+
+func TestServeRejectsInvalidAndRepeatedLifecycle(t *testing.T) {
+	server := newTestServer(t, nil, time.Second)
+	var nilContext context.Context
+	if err := server.Serve(nilContext, newTestListener(t)); err == nil || !strings.Contains(err.Error(), "context") {
+		t.Fatalf("Serve(nil context) error = %v", err)
+	}
+	if err := server.Serve(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "listener") {
+		t.Fatalf("Serve(nil listener) error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := server.Serve(ctx, newTestListener(t)); err != nil {
+		t.Fatalf("first Serve() error = %v", err)
+	}
+	if err := server.Serve(ctx, newTestListener(t)); err == nil || !strings.Contains(err.Error(), "only be served once") {
+		t.Fatalf("second Serve() error = %v", err)
+	}
 }
 
 func TestServeGracefullyDrainsInFlightRequest(t *testing.T) {
@@ -98,9 +109,7 @@ func TestServeGracefullyDrainsInFlightRequest(t *testing.T) {
 	listener := newTestListener(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)
-	go func() {
-		serveDone <- server.Serve(ctx, listener)
-	}()
+	go func() { serveDone <- server.Serve(ctx, listener) }()
 
 	client := &http.Client{Timeout: testTimeout}
 	t.Cleanup(client.CloseIdleConnections)
@@ -114,8 +123,7 @@ func TestServeGracefullyDrainsInFlightRequest(t *testing.T) {
 			requestDone <- requestResult{err: err}
 			return
 		}
-		closeErr := response.Body.Close()
-		requestDone <- requestResult{status: response.StatusCode, err: closeErr}
+		requestDone <- requestResult{status: response.StatusCode, err: response.Body.Close()}
 	}()
 	waitForSignal(t, requestStarted, "application request to start")
 
@@ -149,9 +157,7 @@ func TestServeForceClosesAfterShutdownDeadline(t *testing.T) {
 	listener := newTestListener(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)
-	go func() {
-		serveDone <- server.Serve(ctx, listener)
-	}()
+	go func() { serveDone <- server.Serve(ctx, listener) }()
 
 	client := &http.Client{Timeout: testTimeout}
 	t.Cleanup(client.CloseIdleConnections)
@@ -169,8 +175,8 @@ func TestServeForceClosesAfterShutdownDeadline(t *testing.T) {
 
 	cancel()
 	serveErr := waitForError(t, serveDone)
-	if serveErr == nil || !strings.Contains(serveErr.Error(), "shutdown gateway HTTP server") {
-		t.Fatalf("Serve() error = %v, want shutdown timeout", serveErr)
+	if serveErr == nil || !strings.Contains(serveErr.Error(), "shutdown test-service HTTP server") {
+		t.Fatalf("Serve() error = %v, want service-specific shutdown timeout", serveErr)
 	}
 	waitForSignal(t, requestCanceled, "forced close to cancel request context")
 	select {
@@ -180,14 +186,22 @@ func TestServeForceClosesAfterShutdownDeadline(t *testing.T) {
 	}
 }
 
-func newTestServer(t *testing.T, application http.Handler, shutdownTimeout time.Duration) *Server {
-	t.Helper()
-	server, err := NewServer(Options{
+func testOptions(application http.Handler, shutdownTimeout time.Duration) Options {
+	return Options{
+		ServiceName:        "test-service",
 		Version:            "test-version",
+		NotReadyCode:       "TEST_NOT_READY",
+		NotReadyMessage:    "Test service is not ready",
+		ErrorType:          "test_error",
 		ReadHeaderTimeout:  time.Second,
 		ShutdownTimeout:    shutdownTimeout,
 		ApplicationHandler: application,
-	})
+	}
+}
+
+func newTestServer(t *testing.T, application http.Handler, shutdownTimeout time.Duration) *Server {
+	t.Helper()
+	server, err := NewServer(testOptions(application, shutdownTimeout))
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}

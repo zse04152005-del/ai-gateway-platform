@@ -1,5 +1,5 @@
-// Package gateway provides the data-plane HTTP process lifecycle.
-package gateway
+// Package httpserver provides the shared lifecycle and health surface for HTTP processes.
+package httpserver
 
 import (
 	"context"
@@ -19,26 +19,41 @@ const (
 	idleTimeout    = 60 * time.Second
 )
 
-// Options defines the gateway HTTP server's process-level behavior.
+// Options defines a service HTTP server's identity and process-level behavior.
 type Options struct {
+	ServiceName        string
 	Version            string
+	NotReadyCode       string
+	NotReadyMessage    string
+	ErrorType          string
 	ReadHeaderTimeout  time.Duration
 	ShutdownTimeout    time.Duration
 	ApplicationHandler http.Handler
 }
 
-// Server owns the gateway HTTP listener lifecycle and readiness state.
+// Server owns one HTTP listener lifecycle and its readiness state.
 // A Server is single-use because net/http.Server cannot be restarted after shutdown.
 type Server struct {
+	serviceName     string
 	httpServer      *http.Server
 	shutdownTimeout time.Duration
 	ready           atomic.Bool
 	started         atomic.Bool
 }
 
-// NewServer creates a gateway server. ApplicationHandler receives all routes
-// not owned by the process health surface.
+// NewServer creates a service server. ApplicationHandler receives every route
+// not owned by the shared health surface.
 func NewServer(options Options) (*Server, error) {
+	for name, value := range map[string]string{
+		"service name":      options.ServiceName,
+		"not-ready code":    options.NotReadyCode,
+		"not-ready message": options.NotReadyMessage,
+		"error type":        options.ErrorType,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("%s must not be empty", name)
+		}
+	}
 	if options.ReadHeaderTimeout <= 0 {
 		return nil, errors.New("read header timeout must be greater than zero")
 	}
@@ -51,9 +66,17 @@ func NewServer(options Options) (*Server, error) {
 		version = defaultVersion
 	}
 
-	server := &Server{shutdownTimeout: options.ShutdownTimeout}
+	server := &Server{
+		serviceName:     strings.TrimSpace(options.ServiceName),
+		shutdownTimeout: options.ShutdownTimeout,
+	}
 	server.httpServer = &http.Server{
-		Handler:           server.routes(version, options.ApplicationHandler),
+		Handler: server.routes(healthIdentity{
+			version:         version,
+			notReadyCode:    strings.TrimSpace(options.NotReadyCode),
+			notReadyMessage: strings.TrimSpace(options.NotReadyMessage),
+			errorType:       strings.TrimSpace(options.ErrorType),
+		}, options.ApplicationHandler),
 		ReadHeaderTimeout: options.ReadHeaderTimeout,
 		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
@@ -81,7 +104,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 		return errors.New("listener must not be nil")
 	}
 	if !s.started.CompareAndSwap(false, true) {
-		return errors.New("gateway server can only be served once")
+		return fmt.Errorf("%s HTTP server can only be served once", s.serviceName)
 	}
 
 	serveErr := make(chan error, 1)
@@ -93,7 +116,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	select {
 	case err := <-serveErr:
 		s.ready.Store(false)
-		return normalizeServeError(err)
+		return normalizeServeError(s.serviceName, err)
 	case <-ctx.Done():
 		s.ready.Store(false)
 		return s.shutdown(serveErr)
@@ -107,31 +130,38 @@ func (s *Server) shutdown(serveErr <-chan error) error {
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		closeErr := s.httpServer.Close()
 		return errors.Join(
-			fmt.Errorf("shutdown gateway HTTP server: %w", err),
-			normalizeCloseError(closeErr),
-			normalizeServeError(<-serveErr),
+			fmt.Errorf("shutdown %s HTTP server: %w", s.serviceName, err),
+			normalizeCloseError(s.serviceName, closeErr),
+			normalizeServeError(s.serviceName, <-serveErr),
 		)
 	}
-	return normalizeServeError(<-serveErr)
+	return normalizeServeError(s.serviceName, <-serveErr)
 }
 
-func (s *Server) routes(version string, applicationHandler http.Handler) http.Handler {
+type healthIdentity struct {
+	version         string
+	notReadyCode    string
+	notReadyMessage string
+	errorType       string
+}
+
+func (s *Server) routes(identity healthIdentity, applicationHandler http.Handler) http.Handler {
 	if applicationHandler == nil {
 		applicationHandler = http.NotFoundHandler()
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(writer http.ResponseWriter, _ *http.Request) {
-		writeJSON(writer, http.StatusOK, healthResponse{Status: "ok", Version: version})
+		writeJSON(writer, http.StatusOK, healthResponse{Status: "ok", Version: identity.version})
 	})
 	mux.HandleFunc("GET /health/ready", func(writer http.ResponseWriter, _ *http.Request) {
 		if !s.Ready() {
 			writer.Header().Set("Retry-After", "1")
 			writeJSON(writer, http.StatusServiceUnavailable, errorEnvelope{
 				Error: errorDetail{
-					Code:       "GATEWAY_NOT_READY",
-					Message:    "Gateway is not ready",
-					Type:       "gateway_error",
+					Code:       identity.notReadyCode,
+					Message:    identity.notReadyMessage,
+					Type:       identity.errorType,
 					RequestID:  "",
 					Retryable:  true,
 					RetryAfter: int64Pointer(1000),
@@ -139,7 +169,7 @@ func (s *Server) routes(version string, applicationHandler http.Handler) http.Ha
 			})
 			return
 		}
-		writeJSON(writer, http.StatusOK, healthResponse{Status: "ok", Version: version})
+		writeJSON(writer, http.StatusOK, healthResponse{Status: "ok", Version: identity.version})
 	})
 	mux.HandleFunc("/health/live", healthMethodNotAllowed)
 	mux.HandleFunc("/health/ready", healthMethodNotAllowed)
@@ -196,18 +226,18 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 	}
 }
 
-func normalizeServeError(err error) error {
+func normalizeServeError(serviceName string, err error) error {
 	if err == nil || errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
-	return fmt.Errorf("serve gateway HTTP: %w", err)
+	return fmt.Errorf("serve %s HTTP: %w", serviceName, err)
 }
 
-func normalizeCloseError(err error) error {
+func normalizeCloseError(serviceName string, err error) error {
 	if err == nil || errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}
-	return fmt.Errorf("force-close gateway HTTP server: %w", err)
+	return fmt.Errorf("force-close %s HTTP server: %w", serviceName, err)
 }
 
 func int64Pointer(value int64) *int64 {

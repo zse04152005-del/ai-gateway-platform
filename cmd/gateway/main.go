@@ -12,7 +12,7 @@ import (
 	"syscall"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
-	"github.com/zse04152005-del/ai-gateway-platform/internal/gateway"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
 )
 
 var version = "dev"
@@ -46,8 +46,12 @@ func run(ctx context.Context, lookup config.LookupEnv, listen listenFunc) (runEr
 	if err != nil {
 		return fmt.Errorf("load gateway configuration: %w", err)
 	}
-	server, err := gateway.NewServer(gateway.Options{
+	server, err := httpserver.NewServer(httpserver.Options{
+		ServiceName:       "gateway",
 		Version:           version,
+		NotReadyCode:      "GATEWAY_NOT_READY",
+		NotReadyMessage:   "Gateway is not ready",
+		ErrorType:         "gateway_error",
 		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
 		ShutdownTimeout:   cfg.HTTP.ShutdownTimeout,
 	})

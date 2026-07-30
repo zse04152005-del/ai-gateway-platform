@@ -87,4 +87,13 @@ Invoke-RestMethod http://localhost:8080/health/ready
 
 `Ctrl+C` 会先关闭 readiness，再在 `SHUTDOWN_TIMEOUT` 内排空普通在途请求。详细生命周期语义见 [`cmd/gateway/README.md`](./cmd/gateway/README.md)。
 
+另开终端启动独立 control-plane 管理面：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action control-plane
+Invoke-RestMethod http://localhost:8081/admin/v1/status
+```
+
+control-plane 与 gateway 使用不同监听端口；当前只开放非敏感状态路由，业务管理 API 将在后续身份、租户与领域任务中逐步启用。
+
 `.env` 只用于本地并被 Git 忽略，禁止写入真实生产密钥。
