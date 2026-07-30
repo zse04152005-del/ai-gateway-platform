@@ -34,4 +34,5 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `provideradapter`：显式编译期 Factory 注册表与 Adapter 运行时端口；在启动/发布阶段聚合拒绝未知 Type，并对 Factory nil、身份漂移、类型错配和敏感内部错误 fail closed。
 - `mockadapter`：注册类型 `mock` 的本地真实 HTTP Adapter；完整转换普通/SSE/工具/Usage/错误 Fixture，保留未知计量证据并在取消时关闭上游 Body。
 - `adapterconformance`：统一 Adapter 真实 HTTP 契约测试运行器；注册前拒绝缺失 Fixture，并固定验证普通/SSE/取消/错误/缓存/工具/Finish/未知字段语义。
+- `protocolcanary`：最小合成请求的协议漂移 Runner 与周期调度端口；只保留结构 Finding/Hash，区分 Drift、Provider/Transport Failure、Timeout 和 Cancellation。
 - `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

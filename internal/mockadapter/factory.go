@@ -178,3 +178,4 @@ func parseLocalEndpoint(raw string) (*url.URL, error) {
 
 var _ provideradapter.Factory = (*Factory)(nil)
 var _ provideradapter.Adapter = (*mockAdapter)(nil)
+var _ provideradapter.ProtocolViolation = (*ProtocolError)(nil)

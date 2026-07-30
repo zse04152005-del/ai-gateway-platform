@@ -16,3 +16,5 @@
 - 本 Adapter 不伪造本地 Tokenizer 估算，`EstimateUsage` 返回 `ErrUsageEstimationUnavailable`；账务事实来自 Provider Usage Fixture。
 
 P05-T05 已将跨 Adapter 的真实 HTTP 行为抽到 `internal/adapterconformance`；本包通过注册 Fixture 运行统一矩阵，同时保留 Mock Options、大小限制和 SSE 异常状态机专项测试。
+
+P05-T06 中 `ProtocolError` 实现安全 `provideradapter.ProtocolViolation`；`protocolcanary` 只读取 Operation/Code，将未知响应结构转换为内容无关 Drift Finding。

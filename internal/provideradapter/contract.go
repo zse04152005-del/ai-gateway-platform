@@ -31,6 +31,15 @@ type ChunkStream interface {
 	Close() error
 }
 
+// ProtocolViolation is a safe, provider-neutral diagnostic surface for
+// malformed or drifted upstream protocol data. Operation and code must never
+// contain provider response bodies or request content.
+type ProtocolViolation interface {
+	error
+	ProtocolOperation() string
+	ProtocolCode() string
+}
+
 // Factory creates a deployment-scoped adapter. Secrets and clients are injected
 // into the factory itself; they never enter Registry metadata or error strings.
 type Factory interface {

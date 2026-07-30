@@ -8,6 +8,7 @@
 - [`provider-adapter-registry.md`](./provider-adapter-registry.md)：显式 Factory 注册、启动/发布未知类型门禁与安全失败语义。
 - [`mock-adapter.md`](./mock-adapter.md)：真实 HTTP Mock Adapter、Usage 证据映射、SSE 状态机和错误语义。
 - [`adapter-conformance-suite.md`](./adapter-conformance-suite.md)：统一真实 HTTP Fixture 注册、强制矩阵、取消和错误安全断言。
+- [`protocol-canary.md`](./protocol-canary.md)：最小成本真实协议探针、漂移 Finding、安全结果和周期调度边界。
 - [`normalized-provider-types.md`](./normalized-provider-types.md)：P05 已实现的 Request/Response/Chunk/Error/Usage 可执行类型契约。
 - [`error-and-retry-semantics.md`](./error-and-retry-semantics.md)：公开错误、重试与部分失败语义。
 

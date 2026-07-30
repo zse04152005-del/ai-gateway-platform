@@ -8,7 +8,7 @@
 
 Provider Adapter 只负责供应商协议与统一领域协议之间的转换，不负责租户认证、预算、路由选择、重试策略和长期计费。
 
-P05-T02 的可执行类型、不变量、原始 Usage 证据和安全日志规则见 [`normalized-provider-types.md`](./normalized-provider-types.md) 与 `internal/adapter`；本文件中的接口将在 P05-T03 注册表任务落地。
+P05-T02 的可执行类型、不变量、原始 Usage 证据和安全日志规则见 [`normalized-provider-types.md`](./normalized-provider-types.md) 与 `internal/adapter`；运行时接口、注册表、一致性套件和协议金丝雀均已在 P05-T03～T06 落地。
 
 ## 2. 已实现 Go 接口
 
@@ -27,9 +27,15 @@ type ChunkStream interface {
     Next(ctx context.Context) (adapter.NormalizedChunk, error)
     Close() error
 }
+
+type ProtocolViolation interface {
+    error
+    ProtocolOperation() string
+    ProtocolCode() string
+}
 ```
 
-实际接口位于 `internal/provideradapter`；`Factory.New` 将已经过校验的 Catalog Provider/Deployment 绑定为一个 Adapter，注册与启动/发布门禁见 [`provider-adapter-registry.md`](./provider-adapter-registry.md)。
+实际接口位于 `internal/provideradapter`；`Factory.New` 将已经过校验的 Catalog Provider/Deployment 绑定为一个 Adapter，注册与启动/发布门禁见 [`provider-adapter-registry.md`](./provider-adapter-registry.md)。`ProtocolViolation` 是 Parser 可选的安全诊断接口，用于协议金丝雀，不要求 Adapter 暴露 Raw Body 或内部 Cause。
 
 ## 3. NormalizedRequest
 
@@ -117,6 +123,8 @@ P05-T05 已将以下核心项目实现为 `internal/adapterconformance` 的强�
 10. Provider 协议版本变化。
 
 当前统一套件自动执行 1、2、3 中的 429/5xx、5、6、7、9 中的未知字段，并补充 Finish Reason 矩阵；首包后断流/部分 Usage、上下文过长/认证/内容策略、错误 JSON/超大 Chunk 与协议版本金丝雀继续由 Adapter 专项 Fixture 和 P05-T06 扩展。统一注册与断言见 [`adapter-conformance-suite.md`](./adapter-conformance-suite.md)。
+
+P05-T06 已实现 [`协议金丝雀`](./protocol-canary.md)：通过极小合成请求定期执行同一 Adapter，并把安全 `ProtocolViolation`、未知 Finish、未映射 Usage 和 Provider Extension 转为内容无关 Finding；Provider/Transport Failure、Timeout 与 Cancellation 不误报为协议漂移。
 
 ## 9. 安全要求
 

@@ -56,6 +56,22 @@ func (err *ProtocolError) Is(target error) bool {
 	return target == ErrResponseTooLarge && err.cause == ErrResponseTooLarge
 }
 
+// ProtocolOperation returns the stable parser stage without response content.
+func (err *ProtocolError) ProtocolOperation() string {
+	if err == nil {
+		return ""
+	}
+	return err.Operation
+}
+
+// ProtocolCode returns the stable safe violation code.
+func (err *ProtocolError) ProtocolCode() string {
+	if err == nil {
+		return ""
+	}
+	return err.Code
+}
+
 func protocolError(operation, code string, cause error) error {
 	return &ProtocolError{Operation: operation, Code: code, cause: cause}
 }

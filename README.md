@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P05-T06：建立协议金丝雀测试`
+`P05-T07：实现一个真实 Provider Adapter`
 
-P05-T01～T05 已交付确定性 Mock Provider、规范化事实类型、不可变 Factory 注册表、真实 HTTP Mock Adapter 与统一 Adapter Conformance Suite。新增 Adapter 通过注册协议 Fixture 即可执行普通/SSE、取消、错误、缓存 Usage、工具调用、Finish Reason 和未知字段矩阵。
+P05-T01～T06 已交付确定性 Mock Provider、规范化事实类型、不可变 Factory 注册表、真实 HTTP Mock Adapter、统一 Adapter Conformance Suite 与低成本协议金丝雀 Runner。金丝雀通过极小合成请求区分协议漂移、供应商失败、网络失败、超时和取消，结果不保留 Provider 内容。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
@@ -114,5 +114,7 @@ Invoke-RestMethod http://127.0.0.1:18082/health/ready
 场景 ID、SSE、Usage、Tool Call、错误和断流用法见 [`docs/development/mock-provider.md`](./docs/development/mock-provider.md)。该进程只允许 development/test 和 Loopback 地址，不能作为生产 Provider。
 
 Adapter 一致性注册、强制 Fixture 矩阵与新增 Provider 接入流程见 [`docs/api/adapter-conformance-suite.md`](./docs/api/adapter-conformance-suite.md)。
+
+协议漂移 Finding、最小成本限制、内容安全结果和后续周期调度约束见 [`docs/api/protocol-canary.md`](./docs/api/protocol-canary.md)。
 
 `.env` 只用于本地并被 Git 忽略，禁止写入真实生产密钥。
