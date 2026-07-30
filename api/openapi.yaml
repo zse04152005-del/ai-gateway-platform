@@ -1,0 +1,532 @@
+openapi: 3.1.0
+info:
+  title: AI Gateway API
+  version: 0.1.0
+  description: >-
+    MVP public data-plane API. It intentionally supports a documented subset of
+    OpenAI-compatible chat completions. Unsupported fields that change semantics
+    or billing are rejected instead of silently ignored.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Models
+  - name: Chat
+  - name: Requests
+paths:
+  /health/live:
+    get:
+      operationId: live
+      security: []
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /health/ready:
+    get:
+      operationId: ready
+      security: []
+      responses:
+        '200':
+          description: Process can serve requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          $ref: '#/components/responses/GatewayUnavailable'
+  /v1/models:
+    get:
+      tags: [Models]
+      operationId: listModels
+      summary: List logical models available to the authenticated virtual key
+      responses:
+        '200':
+          description: Available logical models
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /v1/chat/completions:
+    post:
+      tags: [Chat]
+      operationId: createChatCompletion
+      summary: Create a normal or SSE streaming chat completion
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: >-
+            JSON response when stream=false, or text/event-stream when stream=true.
+            A gateway heartbeat is an SSE comment/event and is never model content.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: OpenAI-compatible data events terminated by data [DONE].
+              examples:
+                simple:
+                  value: |-
+                    data: {"id":"chatcmpl_1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+                    data: [DONE]
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/ProviderFailure'
+        '503':
+          $ref: '#/components/responses/GatewayUnavailable'
+        '504':
+          $ref: '#/components/responses/ProviderTimeout'
+  /admin/v1/requests/{requestId}/attempts:
+    get:
+      tags: [Requests]
+      operationId: getRequestAttempts
+      summary: List route attempts for an authorized request
+      description: Administrative endpoint; production deployment uses separate admin authentication.
+      security:
+        - adminOidc: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Request attempts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request_id, attempts]
+                properties:
+                  request_id:
+                    type: string
+                  attempts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RouteAttempt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    virtualKey:
+      type: http
+      scheme: bearer
+      bearerFormat: agw_live_...
+    adminOidc:
+      type: http
+      scheme: bearer
+      bearerFormat: OIDC JWT
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Optional client correlation ID. The gateway may replace invalid or conflicting values.
+      schema:
+        type: string
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Required only for operations or policies that enable replay protection.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  headers:
+    RequestId:
+      description: Gateway request identifier
+      schema:
+        type: string
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+        config_version:
+          type: integer
+          format: int64
+    ChatCompletionRequest:
+      type: object
+      additionalProperties: false
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Logical model name, not a provider deployment name.
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 1024
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        stream:
+          type: boolean
+          default: false
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+        top_p:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1
+        max_tokens:
+          type: integer
+          minimum: 1
+        stop:
+          oneOf:
+            - type: string
+              maxLength: 256
+            - type: array
+              maxItems: 16
+              items:
+                type: string
+                maxLength: 256
+        tools:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/ToolDefinition'
+        tool_choice:
+          oneOf:
+            - type: string
+              enum: [none, auto, required]
+            - type: object
+              additionalProperties: false
+              required: [type, function]
+              properties:
+                type:
+                  const: function
+                function:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+        user:
+          type: string
+          maxLength: 256
+          description: Application-scoped end-user reference; never trusted as a tenant identifier.
+    ChatMessage:
+      type: object
+      additionalProperties: false
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [system, developer, user, assistant, tool]
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: '#/components/schemas/ContentPart'
+        name:
+          type: string
+          maxLength: 128
+        tool_call_id:
+          type: string
+          maxLength: 256
+    ContentPart:
+      type: object
+      additionalProperties: true
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [text, image_url]
+        text:
+          type: string
+        image_url:
+          type: object
+          properties:
+            url:
+              type: string
+              format: uri
+    ToolDefinition:
+      type: object
+      additionalProperties: false
+      required: [type, function]
+      properties:
+        type:
+          const: function
+        function:
+          type: object
+          additionalProperties: false
+          required: [name, parameters]
+          properties:
+            name:
+              type: string
+              pattern: '^[A-Za-z0-9_-]{1,128}$'
+            description:
+              type: string
+              maxLength: 4096
+            parameters:
+              type: object
+              description: JSON Schema for function arguments.
+    ChatCompletionResponse:
+      type: object
+      required: [id, object, created, model, choices]
+      properties:
+        id:
+          type: string
+        object:
+          const: chat.completion
+        created:
+          type: integer
+          format: int64
+        model:
+          type: string
+          description: Logical model name.
+        provider_model:
+          type: string
+          description: May be omitted by tenant policy.
+        choices:
+          type: array
+          items:
+            type: object
+            required: [index, message, finish_reason]
+            properties:
+              index:
+                type: integer
+              message:
+                $ref: '#/components/schemas/AssistantMessage'
+              finish_reason:
+                type: [string, 'null']
+        usage:
+          $ref: '#/components/schemas/Usage'
+        gateway:
+          $ref: '#/components/schemas/GatewayMetadata'
+    AssistantMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          const: assistant
+        content:
+          type: [string, 'null']
+        tool_calls:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    Usage:
+      type: object
+      required: [prompt_tokens, completion_tokens, total_tokens]
+      properties:
+        prompt_tokens:
+          type: integer
+          minimum: 0
+        completion_tokens:
+          type: integer
+          minimum: 0
+        total_tokens:
+          type: integer
+          minimum: 0
+        prompt_tokens_details:
+          type: object
+          properties:
+            cached_tokens:
+              type: integer
+              minimum: 0
+        completion_tokens_details:
+          type: object
+          properties:
+            reasoning_tokens:
+              type: integer
+              minimum: 0
+        source:
+          type: string
+          enum: [provider, estimated, reconciled]
+    GatewayMetadata:
+      type: object
+      required: [request_id, attempt_count]
+      properties:
+        request_id:
+          type: string
+        attempt_count:
+          type: integer
+          minimum: 1
+        route_policy_version:
+          type: integer
+          format: int64
+        usage_complete:
+          type: boolean
+    ModelList:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          const: list
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, object, owned_by]
+            properties:
+              id:
+                type: string
+              object:
+                const: model
+              owned_by:
+                type: string
+              capabilities:
+                type: array
+                items:
+                  type: string
+    RouteAttempt:
+      type: object
+      required: [id, attempt_no, deployment_id, status, started_at]
+      properties:
+        id:
+          type: string
+        attempt_no:
+          type: integer
+        deployment_id:
+          type: string
+        status:
+          type: string
+          enum: [created, connecting, headers_received, streaming, succeeded, retryable_failed, failed, partial_failed, cancelled]
+        started_at:
+          type: string
+          format: date-time
+        first_byte_at:
+          type: [string, 'null']
+          format: date-time
+        ended_at:
+          type: [string, 'null']
+          format: date-time
+        end_reason:
+          type: [string, 'null']
+        usage:
+          $ref: '#/components/schemas/Usage'
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, type, request_id, retryable]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            type:
+              type: string
+            param:
+              type: [string, 'null']
+            request_id:
+              type: string
+            retryable:
+              type: boolean
+            retry_after_ms:
+              type: [integer, 'null']
+              minimum: 0
+    ErrorCode:
+      type: string
+  responses:
+    InvalidRequest:
+      description: Invalid or unsupported request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Missing, invalid, disabled, or expired virtual key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: The authenticated subject is not allowed to perform this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource was not found within the authorized tenant scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RequestTooLarge:
+      description: Request body, header, or content part exceeds configured limits
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: RPM, TPM, concurrency, budget, or upstream capacity limit
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ProviderFailure:
+      description: Provider or provider protocol failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ProviderTimeout:
+      description: Provider did not respond within the active timeout budget
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    GatewayUnavailable:
+      description: No healthy deployment or a required gateway dependency is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+security:
+  - virtualKey: []

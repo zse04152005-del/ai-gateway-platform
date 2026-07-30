@@ -1,0 +1,8 @@
+title = "AI Gateway Platform secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore the Git-ignored root developer environment file during local directory scans"
+paths = ['''^\.env$''']

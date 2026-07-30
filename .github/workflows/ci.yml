@@ -1,0 +1,119 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download and verify modules
+        run: |
+          go mod download
+          go mod verify
+      - name: Verify formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          format_diff="$(go tool golangci-lint fmt --diff)"
+          if [[ -n "$format_diff" ]]; then
+            printf '%s\n' "$format_diff"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Verify lint configuration
+        run: go tool golangci-lint config verify
+      - name: Lint
+        run: go tool golangci-lint run --timeout=5m ./...
+      - name: Unit tests with race detector
+        run: go test -race -count=1 ./...
+      - name: Build all commands and packages
+        run: go build ./...
+      - name: Vulnerability scan
+        run: go tool govulncheck ./...
+      - name: Validate migration order
+        run: go run ./cmd/migrate validate --path migrations
+
+  migration-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ai_gateway_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_gateway_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/ai_gateway_ci?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify migration lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          go run ./cmd/migrate validate --path migrations
+          go run ./cmd/migrate up --path migrations
+          go run ./cmd/migrate up --path migrations
+          go run ./cmd/migrate version --path migrations | grep -q "version=1 dirty=false"
+          if APP_ENV=production go run ./cmd/migrate down --path migrations --steps 1 --confirm-development; then
+            echo "production down guard unexpectedly allowed rollback"
+            exit 1
+          fi
+          go run ./cmd/migrate down --path migrations --steps 1 --confirm-development
+          go run ./cmd/migrate version --path migrations | grep -q "version=0 dirty=false"
+          go run ./cmd/migrate up --path migrations
+          go run ./cmd/migrate version --path migrations | grep -q "version=1 dirty=false"
+
+  config-and-secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate YAML
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .github api deploy .golangci.yml .yamllint.yml
+      - name: Reject committed local secret locations
+        shell: bash
+        run: |
+          test ! -e .env
+          test ! -d secrets
+      - name: Scan high-risk secret patterns
+        shell: pwsh
+        run: ./scripts/dev.ps1 -Action secret-scan
+      - name: Scan repository for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,48 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Go build and test outputs
+bin/
+dist/
+coverage/
+*.test
+*.out
+coverage*.html
+coverage*.json
+
+# Runtime data
+data/
+tmp/
+logs/
+*.log
+*.pid
+
+# Local infrastructure volumes
+.docker-data/
+.compose-data/
+
+# IDE and operating system
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Generated code and reports
+api/generated/
+docs/reports/generated/
+tests/performance/results/
+
+# Local tool caches
+.cache/
+.task/
+

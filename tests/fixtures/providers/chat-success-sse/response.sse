@@ -1,0 +1,8 @@
+data: {"id":"mock-chat-002","object":"chat.completion.chunk","created":1785384000,"model":"mock-model-v1","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"mock-chat-002","object":"chat.completion.chunk","created":1785384000,"model":"mock-model-v1","choices":[{"index":0,"delta":{"content":"mock"},"finish_reason":null}]}
+
+data: {"id":"mock-chat-002","object":"chat.completion.chunk","created":1785384000,"model":"mock-model-v1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}
+
+data: [DONE]
+
