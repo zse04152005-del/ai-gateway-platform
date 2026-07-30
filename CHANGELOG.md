@@ -27,6 +27,7 @@
 - 新增 Provider Secret Reference：本地开发使用版本化 AES-256-GCM 认证加密，生产预留 Vault/KMS Resolver，数据库复合外键阻止跨 Provider 凭据复用。
 - 新增两租户真实 PostgreSQL 隔离回归矩阵，覆盖直接 ID、列表、认证缓存、Virtual Key、模型查询、Provider Secret 与错误枚举防护。
 - 新增本地 `mock-provider` 进程与确定性 OpenAI-compatible 场景协议，覆盖普通响应、SSE、固定/缓存 Usage、延迟、429、503、截断连接、错误 Chunk 和工具调用。
+- 新增供应商无关的 Normalized Request/Response/Chunk/Error/Usage 类型、不变量和深拷贝；严格区分 Usage 缺失与真实 0，以不可变原始 JSON + SHA-256 保留未知计量证据，并提供默认不暴露内容的结构化日志值。
 
 ### Changed
 

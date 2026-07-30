@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P05-T01：实现 Mock Provider 服务（进行中）`
+`P05-T02：定义 NormalizedRequest/Response/Chunk/Error/Usage（进行中）`
 
-P04 已完成并有独立阶段报告；当前实现不依赖外网、场景可精确触发的 Provider 协议模拟器，为后续 Normalized 类型、Adapter 和一致性套件提供确定性上游。
+P05-T01 已交付不依赖外网、场景可精确触发的 Mock Provider；当前正在固化供应商无关的请求、响应、流、错误与 Usage 事实类型，为后续 Adapter 注册表、Mock Adapter 和一致性套件建立不会静默丢失未知计费字段的协议边界。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 

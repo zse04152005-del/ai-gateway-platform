@@ -30,4 +30,5 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `catalog`：Provider、租户 LogicalModel、物理 Deployment、区域/数据保留/Token Capability Contract 及纯领域兼容性判定；不保存凭据。
 - `providersecret`：Provider 绑定的 Secret Reference、development-only AES-256-GCM Envelope、Vault/KMS Resolver 端口与安全解析生命周期。
 - `mockprovider`：本地确定性 OpenAI-compatible Provider 协议模拟器；覆盖普通、SSE、Usage、Tool Call、延迟、错误与断流，不访问外部依赖。
+- `adapter`：供应商无关的 Request/Response/Chunk/Error/Usage 领域协议；严格区分缺失与 0，保留未知 Usage 原始证据，并提供深拷贝与内容安全日志边界。
 - `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

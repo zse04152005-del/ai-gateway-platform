@@ -1,12 +1,14 @@
 # Provider Adapter 契约
 
-> 状态：Accepted for MVP  
+> 状态：Accepted for MVP；Normalized Types 已实现
 > 日期：2026-07-30  
 > 对应任务：P01-T08
 
 ## 1. 目标
 
 Provider Adapter 只负责供应商协议与统一领域协议之间的转换，不负责租户认证、预算、路由选择、重试策略和长期计费。
+
+P05-T02 的可执行类型、不变量、原始 Usage 证据和安全日志规则见 [`normalized-provider-types.md`](./normalized-provider-types.md) 与 `internal/adapter`；本文件中的接口将在 P05-T03 注册表任务落地。
 
 ## 2. 建议 Go 接口
 
@@ -119,4 +121,3 @@ Route Candidate 必须先满足请求所需能力。
 - Provider 响应 Header 默认白名单透传。
 - 错误与 Trace 不含 Provider Key、Prompt/Response 或完整原始 Body。
 - Parser 对正文、行和嵌套深度设置上限。
-
