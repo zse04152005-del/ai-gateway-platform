@@ -21,3 +21,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `virtual_api_key_schema_test.go` 验证 Virtual API Key 不含明文字段、32 字节摘要、Tenant/Project 复合隔离、前缀/摘要唯一、白名单/限额格式和轮换/吊销状态约束；CI PostgreSQL Job 强制执行。
 - `virtual_key_lifecycle_test.go` 使用真实 PostgreSQL 验证一次性创建、事务轮换、并发单替代者、授权/限额继承、幂等吊销和派生过期；完整凭据必须在数据库 JSON 表示中不存在。
 - `virtual_key_auth_test.go` 贯通签发、PostgreSQL 查询和 HTTP Middleware，验证错误 Secret、未知前缀、吊销、绝对过期、轮换宽限、Tenant/Project 禁用、伪造作用域 Header 和缓存显式失效。
+- `model_catalog_schema_test.go` 用真实 PostgreSQL 验证逻辑/物理模型分离、租户唯一性、严格 Capability/Region/Endpoint 约束、绑定兼容性触发器、配置漂移防护和无凭据列。

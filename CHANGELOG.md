@@ -22,6 +22,7 @@
 - 新增 Virtual API Key PostgreSQL 模型：仅持久化不可逆 32 字节 keyed digest 与安全前缀，数据库强制租户/项目隔离、授权覆盖、正整数限额和轮换/吊销生命周期。
 - 新增 Virtual Key 生命周期服务与管理 API：加密随机签发、一次性明文返回、HMAC-SHA-256 摘要、事务化单替代者轮换、幂等吊销和读取时派生过期，并以真实 PostgreSQL 并发测试验证。
 - 新增数据面 Virtual Key 认证中间件：严格 Bearer 解析、版本化 HMAC 常量时间验证、Tenant/Project/Key 状态决策、可信 Principal Context、有界正缓存与显式失效。
+- 新增模型目录：分离 Provider、租户 LogicalModel 与物理 Deployment，以严格 Capability/Region/Data Retention 契约和数据库触发器阻止不兼容绑定及后续配置漂移。
 
 ### Changed
 

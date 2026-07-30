@@ -34,6 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mi
 - `000001_create_app_schemas` 是空库基线，只创建 `app` 和 `audit` Schema，不创建业务表。
 - `000002_create_tenants_projects` 创建隔离根、状态/配额引用/乐观锁/审计字段，以及租户内唯一约束和查询索引。
 - `000003_create_virtual_api_keys` 只保存非秘密前缀和 32 字节 keyed digest，使用租户/项目复合外键，并约束白名单、限额和轮换/吊销生命周期。
+- `000004_create_model_catalog` 分离 Provider、租户 LogicalModel、物理 Deployment 和 Binding；严格校验能力/区域 JSON，并以触发器阻止不兼容绑定及后续配置漂移。
 - Up 重复执行时，迁移引擎返回 no-change 并以成功退出，不重复运行已登记版本。
 - Down 只用于开发与可控回滚，CLI 要求 `--confirm-development`，并在 `APP_ENV=production` 时强制拒绝。
 - 含数据丢失风险的回滚必须单独审批；生产优先采用修复性前滚，不能把 Down 当作常规发布手段。
