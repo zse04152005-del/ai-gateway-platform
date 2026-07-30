@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 )
 
 const (
@@ -65,18 +67,29 @@ func NewServer(options Options) (*Server, error) {
 	if version == "" {
 		version = defaultVersion
 	}
+	identity := healthIdentity{
+		version:         version,
+		notReadyCode:    strings.TrimSpace(options.NotReadyCode),
+		notReadyMessage: strings.TrimSpace(options.NotReadyMessage),
+		errorType:       strings.TrimSpace(options.ErrorType),
+	}
+	if _, err := apierror.New(apierror.Definition{
+		Status:     http.StatusServiceUnavailable,
+		Code:       identity.notReadyCode,
+		Message:    identity.notReadyMessage,
+		Type:       identity.errorType,
+		Retryable:  true,
+		RetryAfter: time.Second,
+	}, nil); err != nil {
+		return nil, fmt.Errorf("invalid not-ready public error: %w", err)
+	}
 
 	server := &Server{
 		serviceName:     strings.TrimSpace(options.ServiceName),
 		shutdownTimeout: options.ShutdownTimeout,
 	}
 	server.httpServer = &http.Server{
-		Handler: server.routes(healthIdentity{
-			version:         version,
-			notReadyCode:    strings.TrimSpace(options.NotReadyCode),
-			notReadyMessage: strings.TrimSpace(options.NotReadyMessage),
-			errorType:       strings.TrimSpace(options.ErrorType),
-		}, options.ApplicationHandler),
+		Handler:           server.routes(identity, options.ApplicationHandler),
 		ReadHeaderTimeout: options.ReadHeaderTimeout,
 		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
@@ -146,8 +159,30 @@ type healthIdentity struct {
 }
 
 func (s *Server) routes(identity healthIdentity, applicationHandler http.Handler) http.Handler {
+	notReadyError := apierror.MustNew(apierror.Definition{
+		Status:     http.StatusServiceUnavailable,
+		Code:       identity.notReadyCode,
+		Message:    identity.notReadyMessage,
+		Type:       identity.errorType,
+		Retryable:  true,
+		RetryAfter: time.Second,
+	}, nil)
+	methodError := apierror.MustNew(apierror.Definition{
+		Status:  http.StatusMethodNotAllowed,
+		Code:    "METHOD_NOT_ALLOWED",
+		Message: "Only GET is allowed for health endpoints",
+		Type:    "invalid_request_error",
+	}, nil)
+	notFoundError := apierror.MustNew(apierror.Definition{
+		Status:  http.StatusNotFound,
+		Code:    "NOT_FOUND",
+		Message: "The requested resource was not found",
+		Type:    "invalid_request_error",
+	}, nil)
 	if applicationHandler == nil {
-		applicationHandler = http.NotFoundHandler()
+		applicationHandler = http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			apierror.WriteHTTP(writer, notFoundError, "", identity.errorType)
+		})
 	}
 
 	mux := http.NewServeMux()
@@ -156,57 +191,26 @@ func (s *Server) routes(identity healthIdentity, applicationHandler http.Handler
 	})
 	mux.HandleFunc("GET /health/ready", func(writer http.ResponseWriter, _ *http.Request) {
 		if !s.Ready() {
-			writer.Header().Set("Retry-After", "1")
-			writeJSON(writer, http.StatusServiceUnavailable, errorEnvelope{
-				Error: errorDetail{
-					Code:       identity.notReadyCode,
-					Message:    identity.notReadyMessage,
-					Type:       identity.errorType,
-					RequestID:  "",
-					Retryable:  true,
-					RetryAfter: int64Pointer(1000),
-				},
-			})
+			apierror.WriteHTTP(writer, notReadyError, "", identity.errorType)
 			return
 		}
 		writeJSON(writer, http.StatusOK, healthResponse{Status: "ok", Version: identity.version})
 	})
-	mux.HandleFunc("/health/live", healthMethodNotAllowed)
-	mux.HandleFunc("/health/ready", healthMethodNotAllowed)
+	mux.HandleFunc("/health/live", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Allow", http.MethodGet)
+		apierror.WriteHTTP(writer, methodError, "", identity.errorType)
+	})
+	mux.HandleFunc("/health/ready", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Allow", http.MethodGet)
+		apierror.WriteHTTP(writer, methodError, "", identity.errorType)
+	})
 	mux.Handle("/", applicationHandler)
 	return mux
-}
-
-func healthMethodNotAllowed(writer http.ResponseWriter, _ *http.Request) {
-	writer.Header().Set("Allow", http.MethodGet)
-	writeJSON(writer, http.StatusMethodNotAllowed, errorEnvelope{
-		Error: errorDetail{
-			Code:      "METHOD_NOT_ALLOWED",
-			Message:   "Only GET is allowed for health endpoints",
-			Type:      "invalid_request_error",
-			RequestID: "",
-			Retryable: false,
-		},
-	})
 }
 
 type healthResponse struct {
 	Status  string `json:"status"`
 	Version string `json:"version,omitempty"`
-}
-
-type errorEnvelope struct {
-	Error errorDetail `json:"error"`
-}
-
-type errorDetail struct {
-	Code       string  `json:"code"`
-	Message    string  `json:"message"`
-	Type       string  `json:"type"`
-	Param      *string `json:"param"`
-	RequestID  string  `json:"request_id"`
-	Retryable  bool    `json:"retryable"`
-	RetryAfter *int64  `json:"retry_after_ms"`
 }
 
 func writeJSON(writer http.ResponseWriter, status int, value any) {
@@ -238,8 +242,4 @@ func normalizeCloseError(serviceName string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("force-close %s HTTP server: %w", serviceName, err)
-}
-
-func int64Pointer(value int64) *int64 {
-	return &value
 }

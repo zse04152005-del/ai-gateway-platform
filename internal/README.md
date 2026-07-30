@@ -19,6 +19,7 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `metering`：Usage Event、Ledger 和价格。
 - `config`：版本化 Snapshot。
 - `security`：脱敏、密钥端口和 SSRF 防护。
+- `apierror`：内部 cause 与公开 HTTP 错误定义的安全隔离、统一渲染和重试元数据。
 - `observability`：日志、指标和 Trace；当前 JSON 日志固定输出服务身份与关联字段，并在 Handler 边界递归脱敏敏感属性。
 - `httpserver`：三个进程共享的 HTTP 健康接口与有限时生命周期；不承载领域规则。
 - `controlplane`：控制面管理路由装配；领域规则通过后续 application/domain 模块提供。

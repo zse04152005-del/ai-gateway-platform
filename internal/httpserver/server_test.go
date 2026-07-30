@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 )
 
 const testTimeout = 3 * time.Second
@@ -30,6 +32,8 @@ func TestNewServerValidatesOptions(t *testing.T) {
 		{name: "not-ready code", mutate: func(options *Options) { options.NotReadyCode = "" }, want: "not-ready code"},
 		{name: "not-ready message", mutate: func(options *Options) { options.NotReadyMessage = "" }, want: "not-ready message"},
 		{name: "error type", mutate: func(options *Options) { options.ErrorType = "" }, want: "error type"},
+		{name: "invalid not-ready code", mutate: func(options *Options) { options.NotReadyCode = "invalid" }, want: "public error code"},
+		{name: "invalid error type", mutate: func(options *Options) { options.ErrorType = "Invalid" }, want: "public error type"},
 		{name: "read header timeout", mutate: func(options *Options) { options.ReadHeaderTimeout = 0 }, want: "read header timeout"},
 		{name: "shutdown timeout", mutate: func(options *Options) { options.ShutdownTimeout = 0 }, want: "shutdown timeout"},
 	}
@@ -62,7 +66,7 @@ func TestHealthEndpointsReflectLifecycleAndIdentity(t *testing.T) {
 	notReady := serveRequest(server.Handler(), http.MethodGet, "/health/ready")
 	assertStatus(t, notReady, http.StatusServiceUnavailable)
 	assertHeader(t, notReady, "Retry-After", "1")
-	var unavailable errorEnvelope
+	var unavailable apierror.Envelope
 	decodeBody(t, notReady, &unavailable)
 	if unavailable.Error.Code != "TEST_NOT_READY" || unavailable.Error.Type != "test_error" || !unavailable.Error.Retryable {
 		t.Fatalf("not-ready response = %+v", unavailable)
@@ -75,6 +79,14 @@ func TestHealthEndpointsReflectLifecycleAndIdentity(t *testing.T) {
 	methodNotAllowed := serveRequest(server.Handler(), http.MethodPost, "/health/live")
 	assertStatus(t, methodNotAllowed, http.StatusMethodNotAllowed)
 	assertHeader(t, methodNotAllowed, "Allow", http.MethodGet)
+
+	unknown := serveRequest(server.Handler(), http.MethodGet, "/unknown")
+	assertStatus(t, unknown, http.StatusNotFound)
+	var notFound apierror.Envelope
+	decodeBody(t, unknown, &notFound)
+	if notFound.Error.Code != "NOT_FOUND" || notFound.Error.Message == "" {
+		t.Fatalf("not-found response = %+v", notFound)
+	}
 }
 
 func TestServeRejectsInvalidAndRepeatedLifecycle(t *testing.T) {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 )
 
 const defaultVersion = "dev"
@@ -16,13 +18,34 @@ func NewHandler(version string) http.Handler {
 		version = defaultVersion
 	}
 
+	methodError := apierror.MustNew(apierror.Definition{
+		Status:  http.StatusMethodNotAllowed,
+		Code:    "METHOD_NOT_ALLOWED",
+		Message: "The HTTP method is not allowed for this resource",
+		Type:    "invalid_request_error",
+	}, nil)
+	notFoundError := apierror.MustNew(apierror.Definition{
+		Status:  http.StatusNotFound,
+		Code:    "NOT_FOUND",
+		Message: "The requested resource was not found",
+		Type:    "invalid_request_error",
+	}, nil)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /admin/v1/status", func(writer http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/admin/v1/status", func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			writer.Header().Set("Allow", http.MethodGet)
+			apierror.WriteHTTP(writer, methodError, "", "control_plane_error")
+			return
+		}
 		writeJSON(writer, http.StatusOK, statusResponse{
 			Status:  "ok",
 			Service: "control-plane",
 			Version: version,
 		})
+	})
+	mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
+		apierror.WriteHTTP(writer, notFoundError, "", "control_plane_error")
 	})
 	return mux
 }

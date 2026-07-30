@@ -22,6 +22,17 @@
 
 生产响应不包含堆栈、内部地址、Provider Key、原始供应商 Body 或其他租户信息。
 
+### 1.1 实现边界
+
+- `internal/apierror.Definition` 只允许保存经过格式校验的公开状态码、稳定错误码、固定消息、类型、参数路径和重试提示。
+- `internal/apierror.Error` 私有保存内部 cause，并支持 `errors.Is`/`errors.As`；HTTP Renderer 绝不读取或序列化 `Error()`、cause 或堆栈。
+- 未识别的普通 `error` 一律映射为 `500 INTERNAL_ERROR` 和固定消息；服务只能选择经过校验的公开 `type`。
+- `request_id` 在 HTTP 传输边界注入，不写入可跨请求复用的领域错误。
+- `Retry-After` HTTP Header 向上取整到秒，响应体保留毫秒值；只有 `retryable=true` 才允许设置。
+- 公开 `param` 只能是字段路径字符，不允许携带用户内容、URL 或内部路径。
+
+健康接口、未知路由和方法错误也使用同一 ErrorEnvelope，不返回 Go/`net/http` 默认纯文本错误页。
+
 ## 2. 超时层次
 
 | 超时 | 含义 | 默认行为 |
@@ -100,4 +111,3 @@
 | 502 | Provider 协议或上游失败 |
 | 503 | 无健康 Deployment/网关暂时不可用 |
 | 500 | 未分类网关内部错误 |
-

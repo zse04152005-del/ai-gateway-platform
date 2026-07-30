@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 )
 
 func TestStatusRoute(t *testing.T) {
@@ -49,10 +51,27 @@ func TestStatusRouteRejectsWrongMethodAndUnknownPath(t *testing.T) {
 	if wrongMethod.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want 405", wrongMethod.Code)
 	}
+	if got := wrongMethod.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow = %q, want GET", got)
+	}
+	var methodBody apierror.Envelope
+	if err := json.Unmarshal(wrongMethod.Body.Bytes(), &methodBody); err != nil {
+		t.Fatalf("decode method error: %v", err)
+	}
+	if methodBody.Error.Code != "METHOD_NOT_ALLOWED" {
+		t.Fatalf("method error = %+v", methodBody)
+	}
 
 	unknown := httptest.NewRecorder()
 	handler.ServeHTTP(unknown, httptest.NewRequest(http.MethodGet, "/admin/v1/unknown", nil))
 	if unknown.Code != http.StatusNotFound {
 		t.Fatalf("unknown status = %d, want 404", unknown.Code)
+	}
+	var unknownBody apierror.Envelope
+	if err := json.Unmarshal(unknown.Body.Bytes(), &unknownBody); err != nil {
+		t.Fatalf("decode unknown error: %v", err)
+	}
+	if unknownBody.Error.Code != "NOT_FOUND" {
+		t.Fatalf("unknown error = %+v", unknownBody)
 	}
 }
