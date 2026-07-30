@@ -246,6 +246,63 @@ func TestExecutionRecordingFailuresFailClosedAroundProviderBoundary(t *testing.T
 	}
 }
 
+func TestClientCancellationReachesExecutorAndRecordsClientCancelled(t *testing.T) {
+	executor := &cancellableChatExecutor{started: make(chan struct{}), released: make(chan struct{})}
+	recorder := &stubExecutionRecorder{}
+	handler, err := NewExecutableHandler(
+		&stubAuthenticator{principal: validGatewayPrincipal()}, &stubModelCatalog{},
+		&stubRouteSelector{}, executor, recorder,
+	)
+	if err != nil {
+		t.Fatalf("NewExecutableHandler() error = %v", err)
+	}
+	manager, err := correlation.New(correlation.Options{})
+	if err != nil {
+		t.Fatalf("correlation.New() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+		`{"model":"general-chat","messages":[{"role":"user","content":"hello"}]}`,
+	)).WithContext(ctx)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		manager.Middleware(handler).ServeHTTP(response, request)
+		close(done)
+	}()
+	select {
+	case <-executor.started:
+	case <-time.After(time.Second):
+		t.Fatal("executor did not start")
+	}
+	cancelledAt := time.Now()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("gateway did not return after client cancellation")
+	}
+	if elapsed := time.Since(cancelledAt); elapsed > time.Second {
+		t.Fatalf("gateway cancellation propagation took %s", elapsed)
+	}
+	select {
+	case <-executor.released:
+	default:
+		t.Fatal("executor context was not cancelled")
+	}
+	var envelope apierror.Envelope
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode cancellation response: %v", err)
+	}
+	if response.Code != clientClosedRequestStatus || envelope.Error.Code != "REQUEST_CANCELLED" ||
+		recorder.completionCalls != 1 || recorder.outcome.AttemptStatus != execution.AttemptCancelled ||
+		recorder.outcome.RequestStatus != execution.RequestCancelled || recorder.outcome.EndReason != "client_cancelled" ||
+		recorder.completionContextErr != nil || !recorder.completionHasDeadline {
+		t.Fatalf("cancellation result = status=%d envelope=%+v recorder=%+v", response.Code, envelope, recorder)
+	}
+}
+
 func TestChatProjectionPreservesFinishReasonsAndMissingUsage(t *testing.T) {
 	tests := map[adapter.FinishReason]string{
 		adapter.FinishStop: "stop", adapter.FinishLength: "length",
@@ -305,22 +362,40 @@ type stubChatExecutor struct {
 	calls     int
 }
 
+type cancellableChatExecutor struct {
+	started  chan struct{}
+	released chan struct{}
+}
+
+func (executor *cancellableChatExecutor) Execute(
+	ctx context.Context,
+	_ routing.Selection,
+	_ adapter.NormalizedRequest,
+) (adapter.NormalizedResponse, error) {
+	close(executor.started)
+	<-ctx.Done()
+	close(executor.released)
+	return adapter.NormalizedResponse{}, ctx.Err()
+}
+
 type stubExecutionRecorder struct {
-	start           execution.StartRequest
-	failedStatus    execution.RequestStatus
-	failedReason    string
-	outcome         execution.AttemptOutcome
-	events          []string
-	startCalls      int
-	routingCalls    int
-	attemptCalls    int
-	completionCalls int
-	failureCalls    int
-	startErr        error
-	routingErr      error
-	attemptErr      error
-	completionErr   error
-	failureErr      error
+	start                 execution.StartRequest
+	failedStatus          execution.RequestStatus
+	failedReason          string
+	outcome               execution.AttemptOutcome
+	events                []string
+	startCalls            int
+	routingCalls          int
+	attemptCalls          int
+	completionCalls       int
+	failureCalls          int
+	startErr              error
+	routingErr            error
+	attemptErr            error
+	completionErr         error
+	failureErr            error
+	completionContextErr  error
+	completionHasDeadline bool
 }
 
 func (stub *stubExecutionRecorder) StartRequest(_ context.Context, start execution.StartRequest) (execution.GatewayRequest, error) {
@@ -382,7 +457,7 @@ func (stub *stubExecutionRecorder) StartAttempt(
 }
 
 func (stub *stubExecutionRecorder) CompleteAttempt(
-	_ context.Context,
+	ctx context.Context,
 	request execution.GatewayRequest,
 	attempt execution.RouteAttempt,
 	outcome execution.AttemptOutcome,
@@ -390,6 +465,8 @@ func (stub *stubExecutionRecorder) CompleteAttempt(
 	stub.completionCalls++
 	stub.events = append(stub.events, "complete_attempt")
 	stub.outcome = outcome
+	stub.completionContextErr = ctx.Err()
+	_, stub.completionHasDeadline = ctx.Deadline()
 	if stub.completionErr != nil {
 		return execution.GatewayRequest{}, execution.RouteAttempt{}, stub.completionErr
 	}

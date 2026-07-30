@@ -80,7 +80,7 @@ func (executor *NonStreamExecutor) Execute(
 		return adapter.NormalizedResponse{}, ErrInvalidExecution
 	}
 	if err := ctx.Err(); err != nil {
-		return adapter.NormalizedResponse{}, newExecutionError(ErrTransport, err)
+		return adapter.NormalizedResponse{}, cancellationExecutionError(ctx, err)
 	}
 	if request.Stream || request.Validate() != nil || selection.Candidate.Validate() != nil ||
 		selection.Candidate.LogicalModel.Name != request.LogicalModel {
@@ -93,14 +93,23 @@ func (executor *NonStreamExecutor) Execute(
 		selection.Candidate.Deployment,
 	)
 	if err != nil {
+		if cancellation := cancellationExecutionError(ctx, err); cancellation != nil {
+			return adapter.NormalizedResponse{}, cancellation
+		}
 		return adapter.NormalizedResponse{}, newExecutionError(ErrAdapterUnavailable, err)
 	}
 	upstreamRequest, err := built.BuildRequest(ctx, request.Clone())
 	if err != nil || upstreamRequest == nil {
+		if cancellation := cancellationExecutionError(ctx, err); cancellation != nil {
+			return adapter.NormalizedResponse{}, cancellation
+		}
 		return adapter.NormalizedResponse{}, newExecutionError(ErrAdapterUnavailable, err)
 	}
 	response, err := executor.client.Do(upstreamRequest)
 	if err != nil {
+		if cancellation := cancellationExecutionError(ctx, err); cancellation != nil {
+			return adapter.NormalizedResponse{}, cancellation
+		}
 		return adapter.NormalizedResponse{}, newExecutionError(ErrTransport, err)
 	}
 	if response == nil || response.Body == nil {
@@ -110,12 +119,26 @@ func (executor *NonStreamExecutor) Execute(
 
 	normalized, err := built.ParseResponse(ctx, response)
 	if err != nil {
+		if cancellation := cancellationExecutionError(ctx, err); cancellation != nil {
+			return adapter.NormalizedResponse{}, cancellation
+		}
 		return adapter.NormalizedResponse{}, normalizeExecutionError(err)
 	}
 	if err := normalized.Validate(); err != nil || normalized.Model != selection.Candidate.Deployment.PhysicalModel {
 		return adapter.NormalizedResponse{}, newExecutionError(ErrProtocol, err)
 	}
 	return normalized, nil
+}
+
+func cancellationExecutionError(ctx context.Context, observed error) error {
+	if ctx == nil || ctx.Err() == nil {
+		return nil
+	}
+	cause := context.Cause(ctx)
+	if cause == nil {
+		cause = ctx.Err()
+	}
+	return newExecutionError(ErrTransport, errors.Join(observed, ctx.Err(), cause))
 }
 
 // Error returns only a validated provider code and never a provider body.

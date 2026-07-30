@@ -1,6 +1,6 @@
 # 非流式 Chat 执行与统一响应
 
-状态：P06-T05 已实现本地代码与自动化验证。
+状态：P06-T07 已实现本地代码与自动化验证。
 
 ## 1. 执行链
 
@@ -99,8 +99,19 @@ Provider Usage 只有在 Input/Output Token 都明确 `Present` 时才进入公�
 
 Provider Body、Provider message、Endpoint、数据库错误和 Adapter 私有 cause 不进入错误 Envelope。`Retry-After` 只接受 Adapter 已校验的正时长且最多 24 小时。
 
-## 5. 当前限制
+## 5. 取消传播
+
+Inbound HTTP Request、Gateway Handler、`NonStreamExecutor`、Adapter 构造/解析和上游 `http.Request` 使用同一条 Context 取消链。客户端断开或主动取消时：
+
+- 正在等待响应头或读取响应 Body 的 Provider 调用立即解除阻塞并释放服务端 Request Context；
+- Executor 保留 `errors.Is(context.Canceled)`，公共分类稳定为 499 `REQUEST_CANCELLED`；
+- 当前 Attempt 和父 Request 以 `cancelled/client_cancelled` 终结，不被误记为 Transport、Protocol 或普通失败；
+- 终态数据库写入使用 `context.WithoutCancel` 派生的 2 秒 bounded context，避免已取消的入站 Context 阻止审计落库，也不会产生无限后台任务。
+
+自动化测试要求 Gateway 和真实 HTTP 上游均在取消后 1 秒内解除阻塞，并显式等待上游 Handler 收到取消，避免只验证客户端协程返回而遗漏连接泄漏。
+
+## 6. 当前限制
 
 - `stream=true` 明确返回 501 `CHAT_STREAMING_NOT_IMPLEMENTED`，由 P07 接通 SSE；不会把流式请求降级为普通响应。
 - 当前每个请求只有一次 Attempt，所以 `gateway.attempt_count=1`；该 Attempt 已持久化，P08 引入安全重试后再从真实尝试数投影。
-- Request/Attempt 生命周期已经持久化并由数据库约束；P06-T07 将进一步验证客户端断开到上游释放的传播时延。
+- Request/Attempt 生命周期已经持久化并由数据库约束；P06-T08 将补齐完整非流式 HTTP 端到端场景矩阵。

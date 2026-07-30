@@ -111,6 +111,58 @@ func TestNonStreamExecutorClassifiesProtocolTransportAndCancellation(t *testing.
 	if !errors.Is(err, ErrTransport) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled error = %v", err)
 	}
+	shutdownCause := errors.New("synthetic trusted shutdown cause")
+	causedContext, cancelCause := context.WithCancelCause(context.Background())
+	cancelCause(shutdownCause)
+	_, err = executor.Execute(causedContext, selection, proxyRequest(mockadapter.ScenarioNormal))
+	if !errors.Is(err, ErrTransport) || !errors.Is(err, context.Canceled) || !errors.Is(err, shutdownCause) ||
+		strings.Contains(err.Error(), shutdownCause.Error()) {
+		t.Fatalf("caused cancellation error = %v", err)
+	}
+}
+
+func TestNonStreamExecutorPropagatesCancellationToActiveUpstream(t *testing.T) {
+	requestStarted := make(chan struct{})
+	upstreamReleased := make(chan struct{})
+	executor, selection := newProxyRuntimeWithHandler(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusOK)
+		if flusher, ok := writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		close(requestStarted)
+		<-request.Context().Done()
+		close(upstreamReleased)
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := executor.Execute(ctx, selection, proxyRequest(mockadapter.ScenarioNormal))
+		result <- err
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request did not start")
+	}
+	cancelledAt := time.Now()
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrTransport) || !errors.Is(err, context.Canceled) {
+			t.Fatalf("Execute() cancellation error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("executor did not return after cancellation")
+	}
+	select {
+	case <-upstreamReleased:
+		if elapsed := time.Since(cancelledAt); elapsed > time.Second {
+			t.Fatalf("upstream cancellation propagation took %s", elapsed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("active upstream request was not released after cancellation")
+	}
 }
 
 func TestNonStreamExecutorRejectsInvalidDependenciesAndInput(t *testing.T) {
@@ -137,6 +189,38 @@ func TestNonStreamExecutorRejectsInvalidDependenciesAndInput(t *testing.T) {
 	}
 }
 
+func TestCancellationExecutionErrorRequiresCancelledContextAndPreservesCause(t *testing.T) {
+	observed := errors.New("private observed cancellation marker")
+	if cancellationExecutionError(context.Background(), observed) != nil {
+		t.Fatal("active Context produced a cancellation error")
+	}
+	cause := errors.New("private trusted cancellation cause")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	err := cancellationExecutionError(ctx, observed)
+	if !errors.Is(err, ErrTransport) || !errors.Is(err, context.Canceled) ||
+		!errors.Is(err, cause) || !errors.Is(err, observed) || strings.Contains(err.Error(), "private") {
+		t.Fatalf("cancellationExecutionError() = %v", err)
+	}
+}
+
+func TestExecutionErrorHelpersRemainSafeForNilAndInvalidValues(t *testing.T) {
+	if _, err := NewProviderError(adapter.NormalizedError{}); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("NewProviderError(invalid) error = %v", err)
+	}
+	var nilProvider *ProviderError
+	if nilProvider.Error() != "<nil>" || nilProvider.Detail() != (adapter.NormalizedError{}) {
+		t.Fatalf("nil ProviderError methods = %q/%+v", nilProvider.Error(), nilProvider.Detail())
+	}
+	if got := newExecutionError(ErrTransport, nil); !errors.Is(got, ErrTransport) {
+		t.Fatalf("newExecutionError(nil cause) = %v", got)
+	}
+	var nilExecution *executionError
+	if nilExecution.Error() != "provider execution failed" || nilExecution.Unwrap() != nil {
+		t.Fatalf("nil executionError methods = %q/%+v", nilExecution.Error(), nilExecution.Unwrap())
+	}
+}
+
 type failingHTTPClient struct {
 	err error
 }
@@ -147,7 +231,12 @@ func (client failingHTTPClient) Do(*http.Request) (*http.Response, error) {
 
 func newProxyRuntime(t *testing.T) (*NonStreamExecutor, routing.Selection) {
 	t.Helper()
-	server := httptest.NewServer(mockprovider.NewHandler())
+	return newProxyRuntimeWithHandler(t, mockprovider.NewHandler())
+}
+
+func newProxyRuntimeWithHandler(t *testing.T, handler http.Handler) (*NonStreamExecutor, routing.Selection) {
+	t.Helper()
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	factory, err := mockadapter.NewFactory(mockadapter.FactoryOptions{Now: proxyClock})
 	if err != nil {

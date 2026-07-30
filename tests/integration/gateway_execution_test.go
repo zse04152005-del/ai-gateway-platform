@@ -211,6 +211,25 @@ func TestGatewayExecutionLifecycle(t *testing.T) {
 			completedAttempt.Status != execution.AttemptRetryableFailed || completedAttempt.HeadersReceivedAt != nil {
 			t.Fatalf("CompleteAttempt(transport) = %+v/%+v/%v", transport, completedAttempt, err)
 		}
+
+		cancelledAttemptRequest := startExecutionRequest(ctx, t, recorder, "integration-execution-cancel-active")
+		cancelledAttemptRequest, err = recorder.MarkRouting(ctx, cancelledAttemptRequest)
+		if err != nil {
+			t.Fatalf("MarkRouting(active cancellation) error = %v", err)
+		}
+		cancelledAttemptRequest, activeAttempt, err := recorder.StartAttempt(ctx, cancelledAttemptRequest, modelListDeploymentAID)
+		if err != nil {
+			t.Fatalf("StartAttempt(active cancellation) error = %v", err)
+		}
+		cancelledAttemptRequest, activeAttempt, err = recorder.CompleteAttempt(ctx, cancelledAttemptRequest, activeAttempt, execution.AttemptOutcome{
+			AttemptStatus: execution.AttemptCancelled, RequestStatus: execution.RequestCancelled,
+			EndReason: "client_cancelled", ErrorCategory: string(adapter.ErrorCancelled), ErrorCode: "CLIENT_CANCELLED",
+		})
+		if err != nil || cancelledAttemptRequest.Status != execution.RequestCancelled ||
+			cancelledAttemptRequest.EndReason != "client_cancelled" || activeAttempt.Status != execution.AttemptCancelled ||
+			activeAttempt.EndReason != "client_cancelled" || activeAttempt.HeadersReceivedAt != nil {
+			t.Fatalf("CompleteAttempt(active cancellation) = %+v/%+v/%v", cancelledAttemptRequest, activeAttempt, err)
+		}
 	})
 }
 

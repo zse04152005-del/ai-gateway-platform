@@ -9,5 +9,6 @@
 - Provider 非 2xx 只保留已验证的 `ProviderError.Detail()`；原始 Body 不进入该结构。
 - 格式、媒体类型、模型身份和 Adapter 协议违规归为 `ErrProtocol`。
 - `executionError.Error()` 只返回稳定类别，内部 cause 仅供可信控制流使用。
+- 入站取消沿同一 Context 进入上游 `http.Request`；正在读取响应 Body 时取消会释放真实 HTTP Handler/连接，并保留 `errors.Is(context.Canceled)`。
 
 Gateway 在本执行边界外创建并迁移 Request/Attempt；P08 在每次调用 `Execute` 之前决定重试与故障切换，Executor 本身保持“一个 Selection 等于一个 Attempt”。
