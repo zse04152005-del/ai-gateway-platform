@@ -60,11 +60,22 @@ erDiagram
       uuid id PK
       uuid tenant_id FK
       uuid project_id FK
-      text prefix
+      text key_prefix UK
       bytea secret_hash
+      text hash_key_version
       text status
       timestamptz expires_at
+      text_array allowed_models
+      jsonb limits
+      uuid rotated_from_id FK
+      timestamptz rotation_grace_expires_at
+      timestamptz revoked_at
+      text revoked_by
       bigint version
+      timestamptz created_at
+      text created_by
+      timestamptz updated_at
+      text updated_by
     }
     PROVIDER {
       uuid id PK
@@ -207,7 +218,8 @@ erDiagram
 - `tenant(slug)` 全局唯一；`project(tenant_id, slug)` 唯一。
 - `project(tenant_id, lower(name))` 大小写不敏感唯一。
 - `project(tenant_id, id)` 唯一，供后续子表建立租户隔离复合外键。
-- `virtual_api_key(prefix)` 唯一；Hash 使用定长安全类型。
+- `virtual_api_key(key_prefix)` 全局唯一；`(hash_key_version, secret_hash)` 唯一，Hash 强制为 32 字节 keyed digest。
+- `virtual_api_key(tenant_id, project_id)` 通过复合外键引用 Project，轮换自引用也必须位于同一 Tenant/Project；一个旧 Key 最多有一个替代 Key。
 - `logical_model(tenant_id, name)` 唯一。
 - `model_deployment(logical_model_id, deployment_id)` 唯一。
 - `price_version(deployment_id, effective_at)` 唯一。

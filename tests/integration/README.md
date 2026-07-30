@@ -18,3 +18,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - Windows 本地因 Go 无法向子进程发送真实 SIGTERM 而跳过实际信号测试，并自动省略当前无 CGO 环境不支持的 `-race`；命令层单测仍覆盖 Context 取消，Linux CI 强制以 race detector 运行完整模板。
 - 真实 Redpanda 连通测试在设置 `KAFKA_BROKERS` 时运行，否则明确 Skip。
 - `tenant_project_schema_test.go` 在 `DATABASE_URL` 已迁移到最新版本时验证 Tenant/Project 数据库约束；CI PostgreSQL Job 强制执行。
+- `virtual_api_key_schema_test.go` 验证 Virtual API Key 不含明文字段、32 字节摘要、Tenant/Project 复合隔离、前缀/摘要唯一、白名单/限额格式和轮换/吊销状态约束；CI PostgreSQL Job 强制执行。
