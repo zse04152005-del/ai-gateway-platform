@@ -90,10 +90,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	session, err := w.connector.Connect(connectCtx, append([]string(nil), w.brokers...))
 	cancelConnect()
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-		return fmt.Errorf("connect metering worker to event bus: %w", err)
+		return normalizeConnectError(ctx, err)
 	}
 	if session == nil {
 		return errors.New("event-bus connector returned a nil session")
@@ -103,12 +100,35 @@ func (w *Worker) Run(ctx context.Context) error {
 	<-ctx.Done()
 	w.connected.Store(false)
 
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), w.shutdownTimeout)
-	defer cancelShutdown()
-	if err := session.Close(shutdownCtx); err != nil {
+	if err := closeSession(session, w.shutdownTimeout); err != nil {
 		return fmt.Errorf("close metering worker event-bus session: %w", err)
 	}
 	return nil
+}
+
+func normalizeConnectError(ctx context.Context, connectErr error) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+		return fmt.Errorf("connect metering worker to event bus: %w", connectErr)
+	}
+}
+
+func closeSession(session Session, timeout time.Duration) error {
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), timeout)
+	defer cancelShutdown()
+	result := make(chan error, 1)
+	go func() {
+		result <- session.Close(shutdownCtx)
+	}()
+
+	select {
+	case err := <-result:
+		return err
+	case <-shutdownCtx.Done():
+		return shutdownCtx.Err()
+	}
 }
 
 // TCPConnector verifies bootstrap transport connectivity without claiming to

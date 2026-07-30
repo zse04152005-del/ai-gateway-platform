@@ -110,6 +110,39 @@ func TestWorkerReturnsConnectionAndCloseFailures(t *testing.T) {
 	}
 }
 
+func TestWorkerEnforcesShutdownDeadlineWhenSessionIgnoresContext(t *testing.T) {
+	closeStarted := make(chan struct{})
+	releaseClose := make(chan struct{})
+	worker, err := New(Options{
+		Brokers:         []string{"broker-one:9092"},
+		ConnectTimeout:  time.Second,
+		ShutdownTimeout: 25 * time.Millisecond,
+		Connector: connectorFunc(func(context.Context, []string) (Session, error) {
+			return sessionFunc(func(context.Context) error {
+				close(closeStarted)
+				<-releaseClose
+				return nil
+			}), nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	startedAt := time.Now()
+	runErr := worker.Run(ctx)
+	elapsed := time.Since(startedAt)
+	waitForWorkerSignal(t, closeStarted, "session close to start")
+	close(releaseClose)
+	if !errors.Is(runErr, context.DeadlineExceeded) {
+		t.Fatalf("Run() error = %v, want deadline exceeded", runErr)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("Run() shutdown elapsed = %v, want finite deadline", elapsed)
+	}
+}
+
 func TestWorkerTreatsStartupCancellationAsCleanStop(t *testing.T) {
 	connector := connectorFunc(func(ctx context.Context, _ []string) (Session, error) {
 		<-ctx.Done()

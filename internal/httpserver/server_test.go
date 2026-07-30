@@ -191,6 +191,112 @@ func TestServeGracefullyDrainsInFlightRequest(t *testing.T) {
 	}
 }
 
+func TestShutdownCancelsStreamsAndDrainsOrdinaryRequests(t *testing.T) {
+	streamStarted := make(chan struct{})
+	streamCause := make(chan error, 1)
+	ordinaryStarted := make(chan struct{})
+	releaseOrdinary := make(chan struct{})
+	application := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/stream":
+			if err := MarkStreaming(request.Context()); err != nil {
+				t.Errorf("MarkStreaming() error = %v", err)
+				return
+			}
+			close(streamStarted)
+			<-request.Context().Done()
+			streamCause <- context.Cause(request.Context())
+		case "/ordinary":
+			close(ordinaryStarted)
+			<-releaseOrdinary
+			writer.WriteHeader(http.StatusNoContent)
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	})
+	server := newTestServer(t, application, time.Second)
+	listener := newTestListener(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(ctx, listener) }()
+
+	client := &http.Client{Timeout: testTimeout}
+	t.Cleanup(client.CloseIdleConnections)
+	baseURL := "http://" + listener.Addr().String()
+	waitForStatus(t, client, baseURL+"/health/ready", http.StatusOK)
+	requestDone := make(chan requestResult, 2)
+	for _, path := range []string{"/stream", "/ordinary"} {
+		go func() {
+			response, err := client.Get(baseURL + path)
+			if err != nil {
+				requestDone <- requestResult{err: err}
+				return
+			}
+			requestDone <- requestResult{status: response.StatusCode, err: response.Body.Close()}
+		}()
+	}
+	waitForSignal(t, streamStarted, "stream request to start")
+	waitForSignal(t, ordinaryStarted, "ordinary request to start")
+	waitForCondition(t, func() bool {
+		requests, streams := server.ActiveConnections()
+		return requests == 2 && streams == 1
+	}, "connection manager to track ordinary and streaming requests")
+
+	cancel()
+	select {
+	case cause := <-streamCause:
+		if !errors.Is(cause, ErrStreamingShutdown) {
+			t.Fatalf("stream cause = %v, want ErrStreamingShutdown", cause)
+		}
+	case <-time.After(testTimeout):
+		t.Fatal("stream was not canceled during graceful shutdown")
+	}
+	select {
+	case err := <-serveDone:
+		t.Fatalf("Serve() returned before ordinary request drained: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	close(releaseOrdinary)
+	if err := waitForError(t, serveDone); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	for range 2 {
+		result := waitForRequest(t, requestDone)
+		if result.err != nil {
+			t.Errorf("request result = %+v", result)
+		}
+	}
+	requests, streams := server.ActiveConnections()
+	if requests != 0 || streams != 0 {
+		t.Fatalf("connections after shutdown = %d requests, %d streams", requests, streams)
+	}
+}
+
+func TestDrainingServerRejectsLateHandlerEntry(t *testing.T) {
+	server := newTestServer(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("application handler called while draining")
+	}), time.Second)
+	server.connections.beginDrain()
+	recorder := serveRequest(server.Handler(), http.MethodGet, "/work")
+	assertStatus(t, recorder, http.StatusServiceUnavailable)
+	var body apierror.Envelope
+	decodeBody(t, recorder, &body)
+	if body.Error.Code != "SERVER_DRAINING" || body.Error.RequestID == "" || !body.Error.Retryable {
+		t.Fatalf("draining response = %+v", body)
+	}
+}
+
+func TestMarkStreamingRejectsUnmanagedContext(t *testing.T) {
+	var nilContext context.Context
+	if err := MarkStreaming(nilContext); err == nil {
+		t.Fatal("MarkStreaming(nil) error = nil")
+	}
+	if err := MarkStreaming(context.Background()); err == nil {
+		t.Fatal("MarkStreaming(unmanaged) error = nil")
+	}
+}
+
 func TestServeForceClosesAfterShutdownDeadline(t *testing.T) {
 	requestStarted := make(chan struct{})
 	requestCanceled := make(chan struct{})

@@ -22,6 +22,6 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `apierror`：内部 cause 与公开 HTTP 错误定义的安全隔离、统一渲染和重试元数据。
 - `correlation`：有界 Request ID 冲突窗口、W3C Trace Context 中间件和下游 HTTP 传播。
 - `observability`：日志、指标和 Trace；当前 JSON 日志固定输出服务身份与关联字段，并在 Handler 边界递归脱敏敏感属性。
-- `httpserver`：三个进程共享的 HTTP 健康接口与有限时生命周期；不承载领域规则。
+- `httpserver`：HTTP 健康接口、请求/流注册表、普通请求有限排空和流式 Context 取消；不承载领域规则。
 - `controlplane`：控制面管理路由装配；领域规则通过后续 application/domain 模块提供。
-- `meteringworker`：计量进程的事件总线 bootstrap 会话与停止生命周期；不提前承载消费/账本规则。
+- `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

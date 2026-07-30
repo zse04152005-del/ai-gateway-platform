@@ -39,6 +39,7 @@ type Options struct {
 type Server struct {
 	serviceName     string
 	httpServer      *http.Server
+	connections     *connectionManager
 	shutdownTimeout time.Duration
 	ready           atomic.Bool
 	started         atomic.Bool
@@ -91,10 +92,13 @@ func NewServer(options Options) (*Server, error) {
 
 	server := &Server{
 		serviceName:     strings.TrimSpace(options.ServiceName),
+		connections:     newConnectionManager(identity.errorType),
 		shutdownTimeout: options.ShutdownTimeout,
 	}
 	server.httpServer = &http.Server{
-		Handler:           correlationManager.Middleware(server.routes(identity, options.ApplicationHandler)),
+		Handler: correlationManager.Middleware(
+			server.connections.middleware(server.routes(identity, options.ApplicationHandler)),
+		),
 		ReadHeaderTimeout: options.ReadHeaderTimeout,
 		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
@@ -110,6 +114,11 @@ func (s *Server) Handler() http.Handler {
 // Ready reports whether the listener is accepting traffic and shutdown has not begun.
 func (s *Server) Ready() bool {
 	return s.ready.Load()
+}
+
+// ActiveConnections reports active ordinary and explicitly marked streaming requests.
+func (s *Server) ActiveConnections() (requests, streams int) {
+	return s.connections.counts()
 }
 
 // Serve runs until the listener fails or ctx is canceled. Cancellation first
@@ -134,9 +143,12 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	select {
 	case err := <-serveErr:
 		s.ready.Store(false)
-		return normalizeServeError(s.serviceName, err)
+		s.connections.stop(ErrServerStopped)
+		closeErr := s.httpServer.Close()
+		return errors.Join(normalizeServeError(s.serviceName, err), normalizeCloseError(s.serviceName, closeErr))
 	case <-ctx.Done():
 		s.ready.Store(false)
+		s.connections.beginDrain()
 		return s.shutdown(serveErr)
 	}
 }
@@ -146,6 +158,7 @@ func (s *Server) shutdown(serveErr <-chan error) error {
 	defer cancel()
 
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+		s.connections.cancelAll(ErrForcedShutdown)
 		closeErr := s.httpServer.Close()
 		return errors.Join(
 			fmt.Errorf("shutdown %s HTTP server: %w", s.serviceName, err),

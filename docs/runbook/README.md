@@ -11,3 +11,6 @@ MVP 前至少提供以下运行手册：
 
 Runbook 必须包含症状、确认指标、影响、立即操作、恢复验证和后续行动。
 
+已实现的运行手册：
+
+- [`graceful-shutdown.md`](graceful-shutdown.md)：三进程关闭、普通请求排空、流取消和强制截止时间。
