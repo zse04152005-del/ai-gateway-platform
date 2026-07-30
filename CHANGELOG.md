@@ -6,6 +6,8 @@
 
 ### Added
 
+- Added strict authenticated `/v1/chat/completions` request parsing with a 1 MiB body limit, recursive duplicate/unknown-field rejection, safe parameter errors, tools, multimodal parts, and structured-output validation.
+
 - 建立项目总纲、设计审视和可追踪开发执行清单。
 - 建立 Git 忽略、行尾、编辑器和文档治理基线。
 - 固化首选技术路线与项目完成标准。

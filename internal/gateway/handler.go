@@ -37,6 +37,7 @@ func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog) (http.Ha
 	})
 	mux := http.NewServeMux()
 	mux.Handle("/v1/models", authenticator.Middleware(newModelsHandler(modelCatalog)))
+	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler()))
 	mux.Handle("/v1/", authenticator.Middleware(notFound))
 	mux.Handle("/", notFound)
 	return mux, nil

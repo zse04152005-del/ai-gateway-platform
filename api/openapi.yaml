@@ -105,6 +105,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '413':
           $ref: '#/components/responses/RequestTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '429':
           $ref: '#/components/responses/RateLimited'
         '502':
@@ -365,6 +367,12 @@ components:
         max_tokens:
           type: integer
           minimum: 1
+          description: >-
+            Deprecated compatibility alias for max_completion_tokens. Supplying
+            both fields is rejected.
+        max_completion_tokens:
+          type: integer
+          minimum: 1
         stop:
           oneOf:
             - type: string
@@ -395,6 +403,35 @@ components:
                   properties:
                     name:
                       type: string
+        response_format:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [type]
+              properties:
+                type:
+                  enum: [text, json_object]
+            - type: object
+              additionalProperties: false
+              required: [type, json_schema]
+              properties:
+                type:
+                  const: json_schema
+                json_schema:
+                  type: object
+                  additionalProperties: false
+                  required: [name, schema]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$'
+                    description:
+                      type: string
+                      maxLength: 4096
+                    schema:
+                      type: object
+                    strict:
+                      type: boolean
         user:
           type: string
           maxLength: 256
@@ -402,7 +439,10 @@ components:
     ChatMessage:
       type: object
       additionalProperties: false
-      required: [role, content]
+      required: [role]
+      description: >-
+        content is required except for assistant messages carrying tool_calls;
+        tool_call_id is required only for tool messages.
       properties:
         role:
           type: string
@@ -411,17 +451,25 @@ components:
           oneOf:
             - type: string
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/ContentPart'
+            - type: 'null'
         name:
           type: string
           maxLength: 128
         tool_call_id:
           type: string
           maxLength: 256
+        tool_calls:
+          type: array
+          minItems: 1
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/AssistantToolCall'
     ContentPart:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required: [type]
       properties:
         type:
@@ -431,10 +479,36 @@ components:
           type: string
         image_url:
           type: object
+          additionalProperties: false
+          required: [url]
           properties:
             url:
               type: string
-              format: uri
+              maxLength: 16384
+            detail:
+              type: string
+              enum: [auto, low, high]
+    AssistantToolCall:
+      type: object
+      additionalProperties: false
+      required: [id, type, function]
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        type:
+          const: function
+        function:
+          type: object
+          additionalProperties: false
+          required: [name, arguments]
+          properties:
+            name:
+              type: string
+              pattern: '^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$'
+            arguments:
+              type: string
+              description: A string containing exactly one JSON object.
     ToolDefinition:
       type: object
       additionalProperties: false
@@ -449,7 +523,7 @@ components:
           properties:
             name:
               type: string
-              pattern: '^[A-Za-z0-9_-]{1,128}$'
+              pattern: '^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$'
             description:
               type: string
               maxLength: 4096
@@ -788,6 +862,12 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     RequestTooLarge:
       description: Request body, header, or content part exceeds configured limits
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnsupportedMediaType:
+      description: Content-Type is not application/json or request content encoding is unsupported
       content:
         application/json:
           schema:
