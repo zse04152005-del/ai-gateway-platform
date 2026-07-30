@@ -91,6 +91,7 @@ func validLookup() config.LookupEnv {
 		"APP_ENV":                 config.EnvironmentTest,
 		"CONTROL_PLANE_HTTP_ADDR": "127.0.0.1:18081",
 		"DATABASE_URL":            "postgres://localhost:5432/ai_gateway_test?sslmode=disable",
+		"VIRTUAL_KEY_HASH_KEY":    strings.Repeat("11", 32),
 	})
 }
 

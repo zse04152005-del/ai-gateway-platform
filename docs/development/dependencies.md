@@ -7,7 +7,7 @@
 | 模块 | 固定版本 | 许可证 | 用途 | 采用理由与边界 |
 |---|---|---|---|---|
 | `github.com/golang-migrate/migrate/v4` | `v4.19.1` | MIT | SQL 迁移状态、锁、up/down/version 执行 | 采用成熟迁移引擎，项目只封装命令和顺序校验；不用于业务查询，不记录数据库连接串 |
-| `github.com/lib/pq` | `v1.12.3`（间接） | MIT | golang-migrate 的 PostgreSQL 驱动 | 仅由迁移命令使用；应用数据访问仍按架构规划采用 pgx/sqlc |
+| `github.com/lib/pq` | `v1.12.3` | MIT | PostgreSQL 迁移驱动与 P04 Virtual Key 事务 Store | 复用已审计依赖完成最小 `database/sql` 生命周期事务；只使用参数化 SQL，不记录连接串；查询规模扩大时再以基准和 ADR 评估 pgx/sqlc，避免当前重复驱动 |
 
 ## 开发/CI 工具依赖
 

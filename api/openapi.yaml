@@ -13,6 +13,7 @@ tags:
   - name: Models
   - name: Chat
   - name: Requests
+  - name: Virtual Keys
 paths:
   /health/live:
     get:
@@ -141,6 +142,116 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/v1/tenants/{tenantId}/projects/{projectId}/virtual-keys:
+    post:
+      tags: [Virtual Keys]
+      operationId: createVirtualKey
+      summary: Create a virtual data-plane credential
+      description: The full credential is returned by this operation exactly once.
+      security:
+        - adminOidc: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/AdminActor'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVirtualKeyRequest'
+      responses:
+        '201':
+          description: Credential created; the credential field cannot be retrieved later
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedVirtualKey'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+  /admin/v1/tenants/{tenantId}/projects/{projectId}/virtual-keys/{virtualKeyId}:
+    get:
+      tags: [Virtual Keys]
+      operationId: getVirtualKey
+      summary: Get safe virtual key metadata
+      description: This response never contains the credential secret or its digest.
+      security:
+        - adminOidc: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/VirtualKeyIdPath'
+      responses:
+        '200':
+          description: Safe credential metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualKeyMetadata'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/v1/tenants/{tenantId}/projects/{projectId}/virtual-keys/{virtualKeyId}/rotate:
+    post:
+      tags: [Virtual Keys]
+      operationId: rotateVirtualKey
+      summary: Atomically replace a virtual key
+      description: The replacement credential is returned once; the source remains usable only during the requested grace period.
+      security:
+        - adminOidc: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/VirtualKeyIdPath'
+        - $ref: '#/components/parameters/AdminActor'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateVirtualKeyRequest'
+      responses:
+        '201':
+          description: Replacement credential created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedVirtualKey'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/v1/tenants/{tenantId}/projects/{projectId}/virtual-keys/{virtualKeyId}/revoke:
+    post:
+      tags: [Virtual Keys]
+      operationId: revokeVirtualKey
+      summary: Permanently revoke a virtual key
+      description: Repeating the same request preserves and returns the original revocation fact.
+      security:
+        - adminOidc: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/VirtualKeyIdPath'
+        - $ref: '#/components/parameters/AdminActor'
+      responses:
+        '200':
+          description: Revoked credential metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualKeyMetadata'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     virtualKey:
@@ -169,6 +280,36 @@ components:
         type: string
         minLength: 8
         maxLength: 128
+    TenantIdPath:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProjectIdPath:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VirtualKeyIdPath:
+      name: virtualKeyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AdminActor:
+      name: X-Admin-Actor
+      in: header
+      required: true
+      description: Audited actor resolved by the trusted admin authentication layer.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
   headers:
     RequestId:
       description: Gateway request identifier
@@ -418,6 +559,133 @@ components:
                 type: array
                 items:
                   type: string
+    CreateVirtualKeyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [live, test]
+          default: live
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        allowed_models:
+          type: [array, 'null']
+          maxItems: 256
+          description: Null inherits project policy; an empty array denies every model.
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        limits:
+          oneOf:
+            - $ref: '#/components/schemas/VirtualKeyLimits'
+            - type: 'null'
+    RotateVirtualKeyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        grace_period_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 900
+    VirtualKeyLimits:
+      type: object
+      additionalProperties: false
+      properties:
+        rpm:
+          type: integer
+          minimum: 1
+        tpm:
+          type: integer
+          minimum: 1
+        concurrency:
+          type: integer
+          minimum: 1
+    VirtualKeyMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - prefix
+        - status
+        - effective_status
+        - version
+        - created_at
+        - created_by
+        - updated_at
+        - updated_by
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        prefix:
+          type: string
+          pattern: '^agw_(live|test)_[a-z0-9]{8,32}$'
+          description: Non-secret support and lookup prefix.
+        status:
+          type: string
+          enum: [active, rotating, revoked]
+        effective_status:
+          type: string
+          enum: [active, rotating, revoked, expired, rotation_grace_elapsed]
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        allowed_models:
+          type: [array, 'null']
+          items:
+            type: string
+        limits:
+          oneOf:
+            - $ref: '#/components/schemas/VirtualKeyLimits'
+            - type: 'null'
+        rotated_from_id:
+          type: [string, 'null']
+          format: uuid
+        rotation_grace_expires_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_by:
+          type: [string, 'null']
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: string
+    IssuedVirtualKey:
+      type: object
+      additionalProperties: false
+      required: [metadata, credential]
+      properties:
+        metadata:
+          $ref: '#/components/schemas/VirtualKeyMetadata'
+        credential:
+          type: string
+          writeOnly: true
+          description: Returned only by create/rotate; never retrievable, logged, or persisted.
     RouteAttempt:
       type: object
       required: [id, attempt_no, deployment_id, status, started_at]
@@ -490,6 +758,12 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     NotFound:
       description: Resource was not found within the authorized tenant scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: The requested lifecycle transition conflicts with current state
       content:
         application/json:
           schema:

@@ -4,6 +4,13 @@
 
 本地 `.env` 由启动工具加载，应用本身不隐式搜索文件，避免生产环境意外读取工作目录中的秘密。
 
+## 虚拟 Key 摘要配置
+
+- `VIRTUAL_KEY_HASH_KEY`：32 字节 HMAC 根密钥的 64 位十六进制编码。测试、预发布和生产必须显式配置。
+- `VIRTUAL_KEY_HASH_KEY_VERSION`：1～64 位非秘密版本标识，写入 `hash_key_version`，用于后续无停机摘要密钥轮换。
+- 仅 `development` 可在显式 Key 为空时，从 32 字节 `LOCAL_ENVELOPE_KEY` 使用 HMAC-SHA-256 和版本化上下文标签派生域分离 Key；其他环境 fail closed。
+- 配置加载、错误和日志都不能输出密钥值；调用方获得副本后在构造 Digester 后立即清零临时切片。
+
 ## 业务配置 Snapshot
 
 `NewSnapshot` 接受正整数版本、发布时间和单个 JSON 对象，生成不可变快照：

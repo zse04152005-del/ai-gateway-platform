@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -11,11 +12,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	_ "github.com/lib/pq"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/controlplane"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/virtualkey"
 )
 
 var version = "dev"
@@ -58,6 +63,35 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create control-plane logger: %w", err)
 	}
+	digestKey, err := cfg.ResolveVirtualKeyHashKey()
+	if err != nil {
+		return fmt.Errorf("resolve virtual credential digest key: %w", err)
+	}
+	digester, err := virtualkey.NewHMACDigester(cfg.Security.VirtualKeyHashVersion, digestKey)
+	clear(digestKey)
+	if err != nil {
+		return fmt.Errorf("create virtual credential digester: %w", err)
+	}
+	database, err := sql.Open("postgres", cfg.Postgres.URL)
+	if err != nil {
+		return fmt.Errorf("open control-plane database: %w", err)
+	}
+	database.SetMaxOpenConns(10)
+	database.SetMaxIdleConns(5)
+	database.SetConnMaxLifetime(30 * time.Minute)
+	defer func() {
+		if closeErr := database.Close(); closeErr != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("close control-plane database: %w", closeErr))
+		}
+	}()
+	virtualKeyStore, err := virtualkey.NewPostgresStore(database)
+	if err != nil {
+		return fmt.Errorf("create virtual credential store: %w", err)
+	}
+	virtualKeyManager, err := virtualkey.NewProductionManager(virtualKeyStore, digester)
+	if err != nil {
+		return fmt.Errorf("create virtual credential manager: %w", err)
+	}
 	server, err := httpserver.NewServer(httpserver.Options{
 		ServiceName:        "control-plane",
 		Version:            version,
@@ -66,7 +100,7 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 		ErrorType:          "control_plane_error",
 		ReadHeaderTimeout:  cfg.HTTP.ReadHeaderTimeout,
 		ShutdownTimeout:    cfg.HTTP.ShutdownTimeout,
-		ApplicationHandler: controlplane.NewHandler(version),
+		ApplicationHandler: controlplane.NewHandlerWithVirtualKeys(version, virtualKeyManager),
 	})
 	if err != nil {
 		return fmt.Errorf("create control-plane server: %w", err)

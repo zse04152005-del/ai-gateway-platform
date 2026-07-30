@@ -18,6 +18,10 @@ func TestLoadValidDevelopmentConfig(t *testing.T) {
 	if len(cfg.Security.LocalEnvelopeKey) != 32 {
 		t.Fatalf("local envelope key length = %d, want 32", len(cfg.Security.LocalEnvelopeKey))
 	}
+	virtualKeyHashKey, err := cfg.ResolveVirtualKeyHashKey()
+	if err != nil || len(virtualKeyHashKey) != 32 {
+		t.Fatalf("ResolveVirtualKeyHashKey() length/error = %d/%v", len(virtualKeyHashKey), err)
+	}
 	if len(cfg.Kafka.Brokers) != 2 {
 		t.Fatalf("brokers = %v, want two brokers", cfg.Kafka.Brokers)
 	}
@@ -92,19 +96,54 @@ func TestLoadRejectsNilLookup(t *testing.T) {
 	}
 }
 
+func TestResolveVirtualKeyHashKeyRequiresExplicitKeyOutsideDevelopment(t *testing.T) {
+	values := validEnvironment()
+	values["APP_ENV"] = EnvironmentTest
+	values["LOCAL_ENVELOPE_KEY"] = ""
+	cfg, err := Load(mapLookup(values))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if _, err := cfg.ResolveVirtualKeyHashKey(); err == nil || !strings.Contains(err.Error(), "required") {
+		t.Fatalf("ResolveVirtualKeyHashKey() error = %v, want required-key error", err)
+	}
+
+	values["VIRTUAL_KEY_HASH_KEY"] = strings.Repeat("11", 32)
+	cfg, err = Load(mapLookup(values))
+	if err != nil {
+		t.Fatalf("Load(explicit key) error = %v", err)
+	}
+	resolved, err := cfg.ResolveVirtualKeyHashKey()
+	if err != nil || len(resolved) != 32 || resolved[0] != 0x11 {
+		t.Fatalf("resolved explicit key length/first/error = %d/%x/%v", len(resolved), resolved[0], err)
+	}
+}
+
+func TestLoadRejectsInvalidVirtualKeyHashConfiguration(t *testing.T) {
+	values := validEnvironment()
+	values["VIRTUAL_KEY_HASH_KEY"] = "abcd"
+	values["VIRTUAL_KEY_HASH_KEY_VERSION"] = "bad version"
+
+	_, err := Load(mapLookup(values))
+	if err == nil || !strings.Contains(err.Error(), "VIRTUAL_KEY_HASH_KEY") {
+		t.Fatalf("Load() error = %v, want virtual-key hash validation", err)
+	}
+}
+
 func validEnvironment() map[string]string {
 	return map[string]string{
-		"APP_ENV":                     EnvironmentDevelopment,
-		"LOG_LEVEL":                   "debug",
-		"GATEWAY_HTTP_ADDR":           ":8080",
-		"CONTROL_PLANE_HTTP_ADDR":     ":8081",
-		"METRICS_ADDR":                ":9091",
-		"DATABASE_URL":                "postgres://ai_gateway:synthetic-test-only@localhost:5432/ai_gateway?sslmode=disable", // #nosec G101 -- deterministic non-production test fixture.
-		"REDIS_ADDR":                  "localhost:6379",
-		"KAFKA_BROKERS":               "localhost:19092,localhost:29092",
-		"CLICKHOUSE_HTTP_URL":         "http://localhost:8123",
-		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
-		"LOCAL_ENVELOPE_KEY":          strings.Repeat("00", 32),
+		"APP_ENV":                      EnvironmentDevelopment,
+		"LOG_LEVEL":                    "debug",
+		"GATEWAY_HTTP_ADDR":            ":8080",
+		"CONTROL_PLANE_HTTP_ADDR":      ":8081",
+		"METRICS_ADDR":                 ":9091",
+		"DATABASE_URL":                 "postgres://ai_gateway:synthetic-test-only@localhost:5432/ai_gateway?sslmode=disable", // #nosec G101 -- deterministic non-production test fixture.
+		"REDIS_ADDR":                   "localhost:6379",
+		"KAFKA_BROKERS":                "localhost:19092,localhost:29092",
+		"CLICKHOUSE_HTTP_URL":          "http://localhost:8123",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":  "http://localhost:4318",
+		"LOCAL_ENVELOPE_KEY":           strings.Repeat("00", 32),
+		"VIRTUAL_KEY_HASH_KEY_VERSION": "local-v1",
 	}
 }
 

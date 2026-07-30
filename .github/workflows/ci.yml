@@ -89,7 +89,7 @@ jobs:
           go run ./cmd/migrate up --path migrations
           go run ./cmd/migrate up --path migrations
           go run ./cmd/migrate version --path migrations | grep -q "version=3 dirty=false"
-          go test -count=1 -tags=integration ./tests/integration/... -run 'Test(TenantProject|VirtualAPIKey)SchemaConstraints'
+          go test -count=1 -tags=integration ./tests/integration/... -run 'Test(TenantProjectSchemaConstraints|VirtualAPIKeySchemaConstraints|VirtualKeyLifecycle)'
           if APP_ENV=production go run ./cmd/migrate down --path migrations --steps 1 --confirm-development; then
             echo "production down guard unexpectedly allowed rollback"
             exit 1

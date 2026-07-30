@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P03-T04：实现配置加载与热配置快照接口（进行中）`
+`P03-T05：实现统一结构化日志（进行中）`
 
-P03-T01～T03 三个进程骨架已完成并通过远程 Linux race CI；当前实现启动环境强校验与业务配置不可变热快照。
+P03-T01～T04 三进程骨架与不可变热配置已完成并通过远程 Linux race CI；当前实现统一字段和默认脱敏的 JSON 结构化日志。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
@@ -94,7 +94,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action control-plane
 Invoke-RestMethod http://localhost:8081/admin/v1/status
 ```
 
-control-plane 与 gateway 使用不同监听端口；当前只开放非敏感状态路由，业务管理 API 将在后续身份、租户与领域任务中逐步启用。
+control-plane 与 gateway 使用不同监听端口；除非敏感状态路由外，当前已开放租户/项目作用域内的 Virtual Key 创建、查询、轮换和吊销 API。完整凭据只在创建/轮换响应出现一次；生产暴露前仍必须完成管理面 OIDC/RBAC。
 
 启动 metering-worker 事件总线连接骨架：
 

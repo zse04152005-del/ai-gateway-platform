@@ -2,7 +2,10 @@ module github.com/zse04152005-del/ai-gateway-platform
 
 go 1.26.5
 
-require github.com/golang-migrate/migrate/v4 v4.19.1
+require (
+	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/lib/pq v1.12.3
+)
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
@@ -124,7 +127,6 @@ require (
 	github.com/ldez/tagliatelle v0.7.2 // indirect
 	github.com/ldez/usetesting v0.5.0 // indirect
 	github.com/leonklingele/grouper v1.1.2 // indirect
-	github.com/lib/pq v1.12.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/macabu/inamedparam v0.2.0 // indirect
 	github.com/magiconair/properties v1.8.9 // indirect

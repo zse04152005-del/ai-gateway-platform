@@ -14,6 +14,15 @@ const defaultVersion = "dev"
 
 // NewHandler creates the management-plane HTTP routes that are available at process bootstrap.
 func NewHandler(version string) http.Handler {
+	return newHandler(version, nil)
+}
+
+// NewHandlerWithVirtualKeys creates the bootstrap routes plus the virtual credential lifecycle API.
+func NewHandlerWithVirtualKeys(version string, lifecycle virtualKeyLifecycle) http.Handler {
+	return newHandler(version, lifecycle)
+}
+
+func newHandler(version string, lifecycle virtualKeyLifecycle) http.Handler {
 	version = strings.TrimSpace(version)
 	if version == "" {
 		version = defaultVersion
@@ -45,6 +54,9 @@ func NewHandler(version string) http.Handler {
 			Version: version,
 		})
 	})
+	if lifecycle != nil {
+		mux.Handle("/admin/v1/tenants/", newVirtualKeyHTTPHandler(lifecycle))
+	}
 	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		apierror.WriteHTTP(writer, notFoundError, correlation.RequestID(request.Context()), "control_plane_error")
 	})

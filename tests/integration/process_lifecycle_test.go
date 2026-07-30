@@ -295,21 +295,23 @@ func repositoryRoot(t *testing.T) string {
 
 func processEnvironment(overrides map[string]string) []string {
 	values := map[string]string{
-		"APP_ENV":                     "test",
-		"LOG_LEVEL":                   "info",
-		"DATABASE_URL":                "postgres://127.0.0.1:5432/process_test?sslmode=disable",
-		"GATEWAY_HTTP_ADDR":           "127.0.0.1:18080",
-		"CONTROL_PLANE_HTTP_ADDR":     "127.0.0.1:18081",
-		"METRICS_ADDR":                "127.0.0.1:19091",
-		"SHUTDOWN_TIMEOUT":            "2s",
-		"HTTP_READ_HEADER_TIMEOUT":    "2s",
-		"REDIS_ADDR":                  "127.0.0.1:6379",
-		"REDIS_PASSWORD":              "",
-		"REDIS_DB":                    "0",
-		"KAFKA_BROKERS":               "127.0.0.1:19092",
-		"CLICKHOUSE_HTTP_URL":         "http://127.0.0.1:8123",
-		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
-		"LOCAL_ENVELOPE_KEY":          "",
+		"APP_ENV":                      "test",
+		"LOG_LEVEL":                    "info",
+		"DATABASE_URL":                 "postgres://127.0.0.1:5432/process_test?sslmode=disable",
+		"GATEWAY_HTTP_ADDR":            "127.0.0.1:18080",
+		"CONTROL_PLANE_HTTP_ADDR":      "127.0.0.1:18081",
+		"METRICS_ADDR":                 "127.0.0.1:19091",
+		"SHUTDOWN_TIMEOUT":             "2s",
+		"HTTP_READ_HEADER_TIMEOUT":     "2s",
+		"REDIS_ADDR":                   "127.0.0.1:6379",
+		"REDIS_PASSWORD":               "",
+		"REDIS_DB":                     "0",
+		"KAFKA_BROKERS":                "127.0.0.1:19092",
+		"CLICKHOUSE_HTTP_URL":          "http://127.0.0.1:8123",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":  "http://127.0.0.1:4318",
+		"LOCAL_ENVELOPE_KEY":           "",
+		"VIRTUAL_KEY_HASH_KEY":         strings.Repeat("11", 32),
+		"VIRTUAL_KEY_HASH_KEY_VERSION": "process-v1",
 	}
 	for key, value := range overrides {
 		values[key] = value

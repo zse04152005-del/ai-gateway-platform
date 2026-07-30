@@ -24,4 +24,5 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `observability`：日志、指标和 Trace；当前 JSON 日志固定输出服务身份与关联字段，并在 Handler 边界递归脱敏敏感属性。
 - `httpserver`：HTTP 健康接口、请求/流注册表、普通请求有限排空和流式 Context 取消；不承载领域规则。
 - `controlplane`：控制面管理路由装配；领域规则通过后续 application/domain 模块提供。
+- `virtualkey`：虚拟凭据签发、HMAC 摘要、生命周期领域规则与 PostgreSQL 事务 Store；不依赖 HTTP。
 - `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

@@ -3,11 +3,14 @@
 package config
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -85,8 +88,12 @@ type TelemetryConfig struct {
 
 // SecurityConfig contains development-only local cryptographic settings.
 type SecurityConfig struct {
-	LocalEnvelopeKey []byte
+	LocalEnvelopeKey      []byte
+	VirtualKeyHashKey     []byte
+	VirtualKeyHashVersion string
 }
+
+var virtualKeyHashVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
 
 // Load creates a validated configuration. Defaults are intended only for local development;
 // production still requires explicit dependency and encryption settings.
@@ -109,6 +116,13 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, err
 	}
 	envelopeKey, err := decodeEnvelopeKey(valueOrDefault(lookup, "LOCAL_ENVELOPE_KEY", ""))
+	if err != nil {
+		return Config{}, err
+	}
+	virtualKeyHashKey, err := decodeFixedHexKey(
+		"VIRTUAL_KEY_HASH_KEY",
+		valueOrDefault(lookup, "VIRTUAL_KEY_HASH_KEY", ""),
+	)
 	if err != nil {
 		return Config{}, err
 	}
@@ -143,7 +157,9 @@ func Load(lookup LookupEnv) (Config, error) {
 			OTLPEndpoint: valueOrDefault(lookup, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
 		},
 		Security: SecurityConfig{
-			LocalEnvelopeKey: envelopeKey,
+			LocalEnvelopeKey:      envelopeKey,
+			VirtualKeyHashKey:     virtualKeyHashKey,
+			VirtualKeyHashVersion: valueOrDefault(lookup, "VIRTUAL_KEY_HASH_KEY_VERSION", "local-v1"),
 		},
 	}
 
@@ -207,6 +223,12 @@ func (c Config) Validate() error {
 	if c.Environment.Name != EnvironmentProduction && len(c.Security.LocalEnvelopeKey) != 0 && len(c.Security.LocalEnvelopeKey) != 32 {
 		problems = append(problems, "LOCAL_ENVELOPE_KEY must decode to exactly 32 bytes")
 	}
+	if len(c.Security.VirtualKeyHashKey) != 0 && len(c.Security.VirtualKeyHashKey) != 32 {
+		problems = append(problems, "VIRTUAL_KEY_HASH_KEY must decode to exactly 32 bytes")
+	}
+	if !virtualKeyHashVersionPattern.MatchString(c.Security.VirtualKeyHashVersion) {
+		problems = append(problems, "VIRTUAL_KEY_HASH_KEY_VERSION has an invalid format")
+	}
 
 	if len(problems) > 0 {
 		return fmt.Errorf("invalid configuration: %s", strings.Join(problems, "; "))
@@ -249,6 +271,34 @@ func decodeEnvelopeKey(raw string) ([]byte, error) {
 		return nil, fmt.Errorf("LOCAL_ENVELOPE_KEY must be hexadecimal: %w", err)
 	}
 	return decoded, nil
+}
+
+func decodeFixedHexKey(name, raw string) ([]byte, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	decoded, err := hex.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be hexadecimal: %w", name, err)
+	}
+	if len(decoded) != sha256.Size {
+		return nil, fmt.Errorf("%s must decode to exactly 32 bytes", name)
+	}
+	return decoded, nil
+}
+
+// ResolveVirtualKeyHashKey returns a copied explicit key or a development-only,
+// domain-separated key derived from LOCAL_ENVELOPE_KEY. Production never falls back.
+func (c Config) ResolveVirtualKeyHashKey() ([]byte, error) {
+	if len(c.Security.VirtualKeyHashKey) == sha256.Size {
+		return append([]byte(nil), c.Security.VirtualKeyHashKey...), nil
+	}
+	if c.Environment.Name == EnvironmentDevelopment && len(c.Security.LocalEnvelopeKey) == sha256.Size {
+		mac := hmac.New(sha256.New, c.Security.LocalEnvelopeKey)
+		_, _ = mac.Write([]byte("ai-gateway/virtual-key-hmac/" + c.Security.VirtualKeyHashVersion))
+		return mac.Sum(nil), nil
+	}
+	return nil, errors.New("VIRTUAL_KEY_HASH_KEY is required outside local development")
 }
 
 func splitCSV(raw string) []string {

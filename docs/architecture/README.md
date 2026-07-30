@@ -7,3 +7,4 @@
 - [`request-correlation.md`](request-correlation.md)：Request ID 冲突治理与 W3C Trace Context 传播。
 - [`tenant-project-schema.md`](tenant-project-schema.md)：Tenant/Project 隔离根、状态、配额引用、审计和唯一约束。
 - [`virtual-api-key-schema.md`](virtual-api-key-schema.md)：Virtual API Key 的不可恢复存储、租户隔离、授权覆盖和生命周期约束。
+- [`virtual-key-lifecycle.md`](virtual-key-lifecycle.md)：一次性签发、事务轮换、幂等吊销、派生过期和摘要密钥边界。
