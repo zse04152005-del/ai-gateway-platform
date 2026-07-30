@@ -15,7 +15,7 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `routing`：候选过滤、决策、健康、重试和熔断。
 - `proxy`：普通与 SSE 代理、取消和背压。
 - `sse`：Provider-neutral 有界 SSE framing；统一处理网络分片、多行 data、comment、`[DONE]`、非法字段与行/事件资源上限。
-- `streaming`：上游 Chunk 到下游 Writer 的双上限 FIFO、有限背压等待、CancelCause 和无内容高水位统计。
+- `streaming`：上游 Chunk 到下游 Writer 的双上限 FIFO、有限背压等待、CancelCause 和无内容高水位统计；全链路 total/首模型 Token/no-progress 超时控制器精确区分 Header、Provider/Gateway heartbeat 与客户端可见模型 Delta，并固定首包前 failover、首包后 partial-failed 边界。
 - `limits`：RPM/TPM/并发。
 - `budget`：Account、Reservation 和 Settlement。
 - `metering`：Usage Event、Ledger 和价格。
@@ -38,7 +38,7 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `adapterconformance`：统一 Adapter 真实 HTTP 契约测试运行器；注册前拒绝缺失 Fixture，并固定验证普通/SSE/取消/错误/缓存/工具/Finish/未知字段语义。
 - `protocolcanary`：最小合成请求的协议漂移 Runner 与周期调度端口；只保留结构 Finding/Hash，区分 Drift、Provider/Transport Failure、Timeout 和 Cancellation。
 - `openaiadapter`：官方 OpenAI Chat Completions 真实适配器；HTTPS、Provider Secret 最短解析边界、普通/SSE/Usage/错误归一化与离线一致性 Fixture。
-- `upstreamhttp`：进程级 Provider HTTP Client、TLS/连接/首部/总超时、连接池复用、禁止重定向与出站 Header 信任边界。
+- `upstreamhttp`：进程级 Provider HTTP Client、TLS/连接/首部/总超时、连接池复用、禁止重定向与出站 Header 信任边界；普通与流式 Client 共享 Transport，流式入口不施加普通响应的固定 Body 总超时。
 - `proxy`：一个已选 Deployment 对应一次 Adapter/HTTP/Parse Attempt；只返回 Normalized Response 或安全分类，不内置重试。
 - `execution`：可信 GatewayRequest、独立 RouteAttempt、乐观版本状态迁移、追加式状态证据和无内容 Usage Summary 的 PostgreSQL 记录边界。
 - `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

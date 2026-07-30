@@ -36,8 +36,9 @@ type Options struct {
 
 // Client is safe for concurrent use and must be shared for the process lifetime.
 type Client struct {
-	httpClient *http.Client
-	transport  *http.Transport
+	httpClient   *http.Client
+	streamClient *http.Client
+	transport    *http.Transport
 }
 
 // NewClient creates one hardened provider client and reusable connection pool.
@@ -73,13 +74,37 @@ func NewClient(options Options) (*Client, error) {
 			return http.ErrUseLastResponse
 		},
 	}
-	return &Client{httpClient: client, transport: transport}, nil
+	streamClient := &http.Client{
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	return &Client{httpClient: client, streamClient: streamClient, transport: transport}, nil
 }
 
 // Do sends an adapter-owned request after removing browser/proxy/forwarding
 // metadata that must never cross the gateway-to-provider trust boundary.
 func (client *Client) Do(request *http.Request) (*http.Response, error) {
-	if client == nil || client.httpClient == nil || client.transport == nil {
+	if client == nil {
+		return nil, ErrTransport
+	}
+	return client.do(client.httpClient, request)
+}
+
+// DoStream sends a streaming request without applying the ordinary whole-body
+// timeout. Dial, TLS, and response-header deadlines still come from the shared
+// Transport; the caller must use a bounded streaming Context for total,
+// first-token, and no-progress deadlines.
+func (client *Client) DoStream(request *http.Request) (*http.Response, error) {
+	if client == nil {
+		return nil, ErrTransport
+	}
+	return client.do(client.streamClient, request)
+}
+
+func (client *Client) do(httpClient *http.Client, request *http.Request) (*http.Response, error) {
+	if httpClient == nil || client.transport == nil {
 		return nil, ErrTransport
 	}
 	if request == nil || request.URL == nil || request.URL.Host == "" {
@@ -101,7 +126,7 @@ func (client *Client) Do(request *http.Request) (*http.Response, error) {
 	outbound.TransferEncoding = nil
 	outbound.Trailer = nil
 	sanitizeHeaders(outbound.Header)
-	response, err := client.httpClient.Do(outbound)
+	response, err := httpClient.Do(outbound)
 	if err != nil {
 		if contextErr := request.Context().Err(); contextErr != nil {
 			return nil, errors.Join(ErrTransport, contextErr)

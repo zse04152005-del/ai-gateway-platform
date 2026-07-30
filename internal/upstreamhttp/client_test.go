@@ -26,6 +26,9 @@ func TestNewClientAppliesHardenedPoolConfiguration(t *testing.T) {
 	if client.httpClient.Timeout != options.TotalTimeout {
 		t.Errorf("client timeout = %v, want %v", client.httpClient.Timeout, options.TotalTimeout)
 	}
+	if client.streamClient == nil || client.streamClient.Timeout != 0 || client.streamClient.Transport != client.transport {
+		t.Errorf("stream client must share the transport without a whole-body timeout")
+	}
 	transport := client.transport
 	if transport.Proxy != nil {
 		t.Error("transport inherits an ambient proxy")
@@ -192,6 +195,44 @@ func TestClientEnforcesResponseHeaderAndTotalTimeouts(t *testing.T) {
 				t.Fatalf("Do() error = %v, want ErrTimeout and ErrTransport", requestErr)
 			}
 		})
+	}
+}
+
+func TestClientDoStreamKeepsHeaderDeadlineButNotOrdinaryWholeBodyTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		writer.WriteHeader(http.StatusOK)
+		writer.(http.Flusher).Flush()
+		select {
+		case <-time.After(90 * time.Millisecond):
+			_, _ = io.WriteString(writer, testBody)
+		case <-request.Context().Done():
+		}
+	}))
+	t.Cleanup(server.Close)
+	options := testOptions()
+	options.TotalTimeout = 25 * time.Millisecond
+	client, err := NewClient(options)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	t.Cleanup(client.CloseIdleConnections)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	started := time.Now()
+	response, err := client.DoStream(request)
+	if err != nil {
+		t.Fatalf("DoStream() error = %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil || string(body) != testBody {
+		t.Fatalf("stream body after ordinary timeout = %q/%v", body, err)
+	}
+	if elapsed := time.Since(started); elapsed < 60*time.Millisecond {
+		t.Fatalf("stream body completed too early to prove total-timeout separation: %s", elapsed)
 	}
 }
 

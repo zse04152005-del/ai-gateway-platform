@@ -14,8 +14,9 @@ Gateway bootstrap
     ▼
 upstreamhttp.Client (one per process)
     │ owns
-    ├── http.Client (total deadline + redirect refusal)
-    └── http.Transport (dial/TLS/header deadlines + shared pool)
+    ├── ordinary http.Client (fixed whole-response deadline)
+    ├── streaming http.Client (Context-owned lifecycle, no fixed Body deadline)
+    └── shared http.Transport (dial/TLS/header deadlines + shared pool)
             │
             ▼
       Adapter-owned http.Request ──► Provider
@@ -39,7 +40,7 @@ upstreamhttp.Client (one per process)
 | `UPSTREAM_HTTP_MAX_CONNS_PER_HOST` | 128 | 单 Origin 总连接上限 | 不低于单 Origin idle |
 | `UPSTREAM_HTTP_MAX_RESPONSE_HEADER_BYTES` | 65536 | 响应 Header 大小 | 1 KiB～1 MiB |
 
-总超时适用于 P06 非流式执行。P07 流式连接不能套用固定 2 分钟全程 deadline；届时使用流式执行入口，以首 Token/no-progress timeout 和客户端 Context 管理生命周期，同时复用同一受控 Transport 和连接池。
+总超时适用于 P06 非流式执行。P07 流式连接通过 `DoStream` 绕开固定 2 分钟 Body deadline，同时仍受同一个 Transport 的连接、TLS、响应头、Header 大小和连接池约束。调用方在发送前创建 `streaming.TimeoutController`，把其 Context 贯穿 Adapter 构建和上游请求；独立 total timer 覆盖完整 Attempt，收到 Header 并 Attach 后再启动首模型 Token timer，首个内容/推理/工具 Delta 后切换为可重置的 no-progress timer。
 
 ## 4. TLS、代理与重定向
 
@@ -53,7 +54,7 @@ upstreamhttp.Client (one per process)
 
 客户端 Virtual Key 只用于 `keyauth` 生成可信 Principal，不进入 `NormalizedRequest`。Provider Adapter 使用规范化业务字段创建全新的 `http.Request`，并在最短边界解析供应商凭据。因此上游请求不存在“从入站请求复制全部 Header”的入口。
 
-`upstreamhttp.Client.Do` 仍做第二层防御：先深复制 Header，再清空自定义 Host、Trailer 和 Transfer-Encoding，删除 `Connection` 声明字段以及 Cookie、Proxy Authorization、Forwarded/X-Forwarded、客户端 IP、Via、Upgrade 等跨边界元数据。原始 Adapter Request 不被修改。
+`upstreamhttp.Client.Do` 与 `DoStream` 仍做同一层第二层防御：先深复制 Header，再清空自定义 Host、Trailer 和 Transfer-Encoding，删除 `Connection` 声明字段以及 Cookie、Proxy Authorization、Forwarded/X-Forwarded、客户端 IP、Via、Upgrade 等跨边界元数据。原始 Adapter Request 不被修改。
 
 供应商 `Authorization`、`X-API-Key` 和协议特性 Header 属于 Adapter-owned Header，不能一刀切删除；防止入站凭据混入的保证来自“全新请求 + 无 Header 字段的 NormalizedRequest”，而不是猜测 Header 名称。
 
@@ -76,3 +77,4 @@ upstreamhttp.Client (one per process)
 - 3xx 不跟随，目标 Origin 没有收到请求。
 - Adapter 认证/特性 Header 保留；Cookie、代理、转发链和 Connection 扩展 Header 被剥离；原请求不突变。
 - 响应头超时、总超时、调用方取消、非法 URL 和 nil 请求的稳定错误分类。
+- `DoStream` 在收到 Header 后不会被普通请求的固定总超时截断，生命周期改由调用 Context 管理。

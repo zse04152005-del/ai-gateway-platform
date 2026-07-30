@@ -11,3 +11,22 @@
 - Exposes current and high-water Chunk/byte counts, backpressure waits, and overflow count without content labels.
 
 The queue never creates an unbounded channel or a per-Chunk Goroutine. P07 streaming execution composes this component with `internal/sse.Writer` and the Adapter-owned upstream `ChunkStream`.
+
+## Timeout controller
+
+`TimeoutController` owns one cancellable Context from before the upstream dial until the stream terminates:
+
+1. Create it before Adapter request construction and use `Context()` for both `BuildRequest` and `upstreamhttp.Client.DoStream`.
+2. After a usable Provider HTTP response and `OpenStream`, call `Attach`. This exact transition records `HeadersReceivedAt` and starts the first-model-token clock.
+3. Read only through the returned `GuardedStream`. Content, reasoning, and tool deltas are the only events that establish client-visible model output.
+4. Close the controller on every exit path. Timeout, caller cancellation, EOF, and parser failure also close the attached stream automatically.
+
+Provider message-start/heartbeat/extension/usage events are upstream progress facts but do not satisfy the first-token deadline. `RecordGatewayHeartbeat` records a gateway-owned keepalive without changing either deadline. After the first model delta, every real upstream event resets no-progress; gateway heartbeats never do. The independent total timer starts at controller creation and therefore also bounds adapter build, dial, TLS, and response-header time.
+
+`TimeoutFailure` is content-free and preserves the policy boundary:
+
+- first-token timeout after headers and before output: retry/failover eligible for P08;
+- no-progress timeout after output: partial failure, never transparent failover;
+- total timeout: no additional retry budget; it is partial only when output already started.
+
+Every controller-owned timeout cancels the same Context used by upstream HTTP, closes the Adapter stream/response Body, and remains discoverable through `errors.Is`, `Failure`, and `Snapshot` even when closing the socket causes a lower-level read error.
