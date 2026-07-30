@@ -7,7 +7,7 @@
 
 - Git：2.51.2.windows.1。
 - Go：1.26.5 windows/amd64；安装包来自 Go 官方，SHA-256 与官方元数据一致。
-- `go.mod`：模块 `github.com/aigateway-lab/ai-gateway-platform`，最低安全工具链 Go 1.26.5。
+- `go.mod`：真实仓库模块 `github.com/zse04152005-del/ai-gateway-platform`，最低安全工具链 Go 1.26.5。
 - `go mod tidy` 与 `go list -m -json` 成功。
 - `go vet ./...` 成功。
 - `go test -count=1 ./...` 成功。

@@ -1,4 +1,4 @@
-module github.com/aigateway-lab/ai-gateway-platform
+module github.com/zse04152005-del/ai-gateway-platform
 
 go 1.26.5
 

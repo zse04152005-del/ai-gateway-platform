@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	projectmigration "github.com/aigateway-lab/ai-gateway-platform/internal/migration"
 	gomigrate "github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	projectmigration "github.com/zse04152005-del/ai-gateway-platform/internal/migration"
 )
 
 const usage = `Usage:
