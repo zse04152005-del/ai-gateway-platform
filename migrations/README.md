@@ -38,6 +38,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mi
 - `000005_create_project_model_allowlist` 用 Tenant 复合外键建立 Project 到 LogicalModel 的安全授权关系，Key 白名单只能在查询时进一步收窄。
 - `000006_create_provider_secret_references` 保存 Provider 绑定的本地认证密文或 Vault/KMS Locator，并以复合外键阻止 Deployment 跨 Provider 引用凭据。
 - `000007_create_gateway_execution_records` 保存无内容的 GatewayRequest、每次物理调用独立 RouteAttempt 和追加式状态事件，并由触发器强制合法状态迁移与乐观版本单调。
+- `000008_allow_unknown_gateway_logical_model` 允许先记录客户端请求的未知模型名，再由路由层返回 `MODEL_UNAVAILABLE`；避免可变目录外键把可审计的业务失败误报成记录服务故障。
 - Up 重复执行时，迁移引擎返回 no-change 并以成功退出，不重复运行已登记版本。
 - Down 只用于开发与可控回滚，CLI 要求 `--confirm-development`，并在 `APP_ENV=production` 时强制拒绝。
 - 含数据丢失风险的回滚必须单独审批；生产优先采用修复性前滚，不能把 Down 当作常规发布手段。

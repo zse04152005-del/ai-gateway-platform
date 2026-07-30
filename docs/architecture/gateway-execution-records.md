@@ -4,7 +4,7 @@
 
 The gateway records one durable `GatewayRequest` for the authenticated client operation and one independent `RouteAttempt` for every physical provider call. This layer answers which trusted scope initiated a call, which deployment was charged, which legal states were observed, and whether usage was present, without retaining prompts, responses, credentials, endpoints, or raw provider evidence.
 
-Migration `000007_create_gateway_execution_records` is the PostgreSQL source of truth. `internal/execution.Recorder` is the application port and `PostgresRecorder` is its compare-and-swap implementation.
+Migration `000007_create_gateway_execution_records` creates the PostgreSQL source of truth. Migration `000008_allow_unknown_gateway_logical_model` deliberately removes the catalog foreign key from the client-supplied logical-model fact: unknown models must remain auditable and routing owns the `MODEL_UNAVAILABLE` decision. `internal/execution.Recorder` is the application port and `PostgresRecorder` is its compare-and-swap implementation.
 
 ## Data boundaries
 
