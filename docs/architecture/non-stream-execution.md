@@ -23,4 +23,4 @@ The public response uses the requested LogicalModel. Physical model identity and
 
 ## Attempt boundary
 
-One `NonStreamExecutor.Execute` invocation equals one upstream attempt. P06-T06 surrounds it with Request/Attempt state transitions. P08 may invoke it again only after retry classification and a fresh Selection; it must never hide multiple upstream charges behind a single attempt record.
+One `NonStreamExecutor.Execute` invocation equals one upstream attempt and the Gateway surrounds it with durable Request/Attempt state transitions. P08 may invoke it again only after retry classification and a fresh Selection; it must never hide multiple upstream charges behind a single attempt record.

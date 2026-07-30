@@ -19,6 +19,7 @@ import (
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/gateway"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
@@ -138,7 +139,13 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create chat executor: %w", err)
 	}
-	applicationHandler, err := gateway.NewExecutableHandler(authenticator, modelCatalog, routeSelector, chatExecutor)
+	executionRecorder, err := execution.NewPostgresRecorder(database, time.Now, rand.Reader)
+	if err != nil {
+		return fmt.Errorf("create execution recorder: %w", err)
+	}
+	applicationHandler, err := gateway.NewExecutableHandler(
+		authenticator, modelCatalog, routeSelector, chatExecutor, executionRecorder,
+	)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)
 	}

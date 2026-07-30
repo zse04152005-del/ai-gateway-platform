@@ -10,6 +10,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
@@ -51,7 +52,7 @@ func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog, selector
 		}
 		routeSelector = selectors[0]
 	}
-	return newHandler(authenticator, modelCatalog, routeSelector, nil), nil
+	return newHandler(authenticator, modelCatalog, routeSelector, nil, nil), nil
 }
 
 // NewExecutableHandler requires the complete non-streaming execution chain.
@@ -60,6 +61,7 @@ func NewExecutableHandler(
 	modelCatalog ModelCatalog,
 	routeSelector RouteSelector,
 	executor ChatExecutor,
+	recorder execution.Recorder,
 ) (http.Handler, error) {
 	if authenticator == nil {
 		return nil, errors.New("gateway authenticator must not be nil")
@@ -73,7 +75,10 @@ func NewExecutableHandler(
 	if executor == nil {
 		return nil, errors.New("gateway chat executor must not be nil")
 	}
-	return newHandler(authenticator, modelCatalog, routeSelector, executor), nil
+	if recorder == nil {
+		return nil, errors.New("gateway execution recorder must not be nil")
+	}
+	return newHandler(authenticator, modelCatalog, routeSelector, executor, recorder), nil
 }
 
 func newHandler(
@@ -81,6 +86,7 @@ func newHandler(
 	modelCatalog ModelCatalog,
 	routeSelector RouteSelector,
 	executor ChatExecutor,
+	recorder execution.Recorder,
 ) http.Handler {
 	notFound := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		apierror.WriteHTTP(writer, apierror.MustNew(apierror.Definition{
@@ -90,7 +96,7 @@ func newHandler(
 	})
 	mux := http.NewServeMux()
 	mux.Handle("/v1/models", authenticator.Middleware(newModelsHandler(modelCatalog)))
-	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector, executor)))
+	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector, executor, recorder)))
 	mux.Handle("/v1/", authenticator.Middleware(notFound))
 	mux.Handle("/", notFound)
 	return mux

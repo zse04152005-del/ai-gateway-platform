@@ -16,7 +16,7 @@ Virtual Key authentication
   -> unified client JSON / public API error
 ```
 
-`NonStreamExecutor` 一次只执行一个已经选定的 Deployment，不在内部重选、重试或跨模型拼接。这样 P06-T06 可以把一次 `Execute` 精确对应为一个 Route Attempt，P08 再在外层基于安全分类决定是否重试或故障切换。
+`NonStreamExecutor` 一次只执行一个已经选定的 Deployment，不在内部重选、重试或跨模型拼接。Gateway 已把一次 `Execute` 精确对应为一个持久化 Route Attempt，P08 再在外层基于安全分类决定是否重试或故障切换。
 
 Gateway 进程显式注册 `mock` 和 `openai` 两个 Adapter Factory。开发环境可以通过 PostgreSQL Provider Secret Reference + 本地 Envelope Resolver 调用 OpenAI；没有本地 Key 的环境仍可启动和使用 Mock，但 OpenAI 凭据解析会 fail closed。正式 Vault/KMS Resolver 在 P12-T03 接入。
 
@@ -102,5 +102,5 @@ Provider Body、Provider message、Endpoint、数据库错误和 Adapter 私有 
 ## 5. 当前限制
 
 - `stream=true` 明确返回 501 `CHAT_STREAMING_NOT_IMPLEMENTED`，由 P07 接通 SSE；不会把流式请求降级为普通响应。
-- 当前每个请求只有一次 Attempt，所以 `gateway.attempt_count=1`；P06-T06 建立持久化 Attempt，P08 引入安全重试后从真实尝试数投影。
-- P06-T06 前尚未持久化 Request/Attempt；P06-T07 前尚未记录 `client_cancelled` 状态，尽管 Context 和上游连接已经能取消。
+- 当前每个请求只有一次 Attempt，所以 `gateway.attempt_count=1`；该 Attempt 已持久化，P08 引入安全重试后再从真实尝试数投影。
+- Request/Attempt 生命周期已经持久化并由数据库约束；P06-T07 将进一步验证客户端断开到上游释放的传播时延。

@@ -13,6 +13,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
@@ -21,11 +22,13 @@ import (
 func TestExecutableChatHandlerReturnsUnifiedSuccess(t *testing.T) {
 	executor := &stubChatExecutor{response: gatewayNormalizedResponse(t)}
 	selector := &stubRouteSelector{selection: routing.Selection{}}
+	executionRecorder := &stubExecutionRecorder{}
 	handler, err := NewExecutableHandler(
 		&stubAuthenticator{principal: validGatewayPrincipal()},
 		&stubModelCatalog{},
 		selector,
 		executor,
+		executionRecorder,
 	)
 	if err != nil {
 		t.Fatalf("NewExecutableHandler() error = %v", err)
@@ -76,6 +79,12 @@ func TestExecutableChatHandlerReturnsUnifiedSuccess(t *testing.T) {
 	if executor.calls != 1 || executor.request.LogicalModel != "general-chat" || strings.Contains(response.Body.String(), "client prompt marker") {
 		t.Fatalf("executor calls/request or response leak = %d/%#v/%s", executor.calls, executor.request, response.Body)
 	}
+	if strings.Join(executionRecorder.events, ",") != "start_request,mark_routing,start_attempt,complete_attempt" ||
+		executionRecorder.start.ID != response.Header().Get("X-Request-Id") ||
+		executionRecorder.start.TenantID != gatewayTenantID || executionRecorder.start.ProjectID != gatewayProjectID ||
+		executionRecorder.outcome.AttemptStatus != execution.AttemptSucceeded || executionRecorder.outcome.Usage == nil {
+		t.Fatalf("execution recording = events=%v start=%+v outcome=%+v", executionRecorder.events, executionRecorder.start, executionRecorder.outcome)
+	}
 }
 
 func TestExecutableChatHandlerDefersStreamingToP07(t *testing.T) {
@@ -85,6 +94,7 @@ func TestExecutableChatHandlerDefersStreamingToP07(t *testing.T) {
 		&stubModelCatalog{},
 		&stubRouteSelector{},
 		executor,
+		&stubExecutionRecorder{},
 	)
 	if err != nil {
 		t.Fatalf("NewExecutableHandler() error = %v", err)
@@ -161,6 +171,81 @@ func TestExecutionPublicErrorMapsStableProviderCategories(t *testing.T) {
 	}
 }
 
+func TestAttemptOutcomesPreserveProviderAndCancellationSemantics(t *testing.T) {
+	providerFailure := mustProviderError(t, adapter.NormalizedError{
+		Code: "FIXTURE_RATE_LIMIT", Category: adapter.ErrorRateLimit, Retryable: true,
+		ProviderStatus: http.StatusTooManyRequests, ProviderRequestID: "provider-request-429",
+		SafeMessage: "Provider rate limited the request",
+	})
+	provider := attemptOutcomeForError(providerFailure)
+	if provider.AttemptStatus != execution.AttemptRetryableFailed || provider.RequestStatus != execution.RequestFailed ||
+		!provider.HeadersReceived || provider.ProviderRequestID != "provider-request-429" ||
+		provider.ErrorCategory != string(adapter.ErrorRateLimit) || provider.ErrorCode != "FIXTURE_RATE_LIMIT" ||
+		provider.Validate() != nil {
+		t.Fatalf("provider attempt outcome = %+v", provider)
+	}
+	cancelled := attemptOutcomeForError(errors.Join(proxy.ErrTransport, context.Canceled))
+	if cancelled.AttemptStatus != execution.AttemptCancelled || cancelled.RequestStatus != execution.RequestCancelled ||
+		cancelled.EndReason != "client_cancelled" || cancelled.Validate() != nil {
+		t.Fatalf("cancelled attempt outcome = %+v", cancelled)
+	}
+	protocol := attemptOutcomeForError(proxy.ErrProtocol)
+	if protocol.AttemptStatus != execution.AttemptFailed || !protocol.HeadersReceived ||
+		protocol.ErrorCategory != string(adapter.ErrorProtocol) || protocol.Validate() != nil {
+		t.Fatalf("protocol attempt outcome = %+v", protocol)
+	}
+}
+
+func TestExecutionRecordingFailuresFailClosedAroundProviderBoundary(t *testing.T) {
+	privateFailure := errors.New("postgres://private-user:private-password@private-host/execution")
+	tests := []struct {
+		name           string
+		recorder       *stubExecutionRecorder
+		wantSelector   int
+		wantExecutor   int
+		wantFailure    int
+		wantCompletion int
+	}{
+		{name: "start", recorder: &stubExecutionRecorder{startErr: privateFailure}},
+		{name: "mark routing", recorder: &stubExecutionRecorder{routingErr: privateFailure}},
+		{name: "start attempt", recorder: &stubExecutionRecorder{attemptErr: privateFailure}, wantSelector: 1, wantFailure: 1},
+		{name: "complete attempt", recorder: &stubExecutionRecorder{completionErr: privateFailure}, wantSelector: 1, wantExecutor: 1, wantCompletion: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			selector := &stubRouteSelector{}
+			executor := &stubChatExecutor{response: gatewayNormalizedResponse(t)}
+			handler, err := NewExecutableHandler(
+				&stubAuthenticator{principal: validGatewayPrincipal()}, &stubModelCatalog{},
+				selector, executor, test.recorder,
+			)
+			if err != nil {
+				t.Fatalf("NewExecutableHandler() error = %v", err)
+			}
+			manager, err := correlation.New(correlation.Options{})
+			if err != nil {
+				t.Fatalf("correlation.New() error = %v", err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+				`{"model":"general-chat","messages":[{"role":"user","content":"hello"}]}`,
+			))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			manager.Middleware(handler).ServeHTTP(response, request)
+			var envelope apierror.Envelope
+			if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+				t.Fatalf("decode record failure: %v; body=%s", err, response.Body)
+			}
+			if response.Code != http.StatusServiceUnavailable || envelope.Error.Code != "EXECUTION_RECORD_UNAVAILABLE" ||
+				strings.Contains(response.Body.String(), "private") || selector.calls != test.wantSelector ||
+				executor.calls != test.wantExecutor || test.recorder.failureCalls != test.wantFailure ||
+				test.recorder.completionCalls != test.wantCompletion {
+				t.Fatalf("failure boundary = status=%d envelope=%+v selector=%d executor=%d recorder=%+v", response.Code, envelope, selector.calls, executor.calls, test.recorder)
+			}
+		})
+	}
+}
+
 func TestChatProjectionPreservesFinishReasonsAndMissingUsage(t *testing.T) {
 	tests := map[adapter.FinishReason]string{
 		adapter.FinishStop: "stop", adapter.FinishLength: "length",
@@ -194,17 +279,21 @@ func TestNewExecutableHandlerRejectsMissingExecutionDependencies(t *testing.T) {
 	catalog := &stubModelCatalog{}
 	selector := &stubRouteSelector{}
 	executor := &stubChatExecutor{}
-	if _, err := NewExecutableHandler(nil, catalog, selector, executor); err == nil {
+	recorder := &stubExecutionRecorder{}
+	if _, err := NewExecutableHandler(nil, catalog, selector, executor, recorder); err == nil {
 		t.Fatal("nil authenticator accepted")
 	}
-	if _, err := NewExecutableHandler(authenticator, nil, selector, executor); err == nil {
+	if _, err := NewExecutableHandler(authenticator, nil, selector, executor, recorder); err == nil {
 		t.Fatal("nil catalog accepted")
 	}
-	if _, err := NewExecutableHandler(authenticator, catalog, nil, executor); err == nil {
+	if _, err := NewExecutableHandler(authenticator, catalog, nil, executor, recorder); err == nil {
 		t.Fatal("nil selector accepted")
 	}
-	if _, err := NewExecutableHandler(authenticator, catalog, selector, nil); err == nil {
+	if _, err := NewExecutableHandler(authenticator, catalog, selector, nil, recorder); err == nil {
 		t.Fatal("nil executor accepted")
+	}
+	if _, err := NewExecutableHandler(authenticator, catalog, selector, executor, nil); err == nil {
+		t.Fatal("nil recorder accepted")
 	}
 }
 
@@ -214,6 +303,101 @@ type stubChatExecutor struct {
 	selection routing.Selection
 	request   adapter.NormalizedRequest
 	calls     int
+}
+
+type stubExecutionRecorder struct {
+	start           execution.StartRequest
+	failedStatus    execution.RequestStatus
+	failedReason    string
+	outcome         execution.AttemptOutcome
+	events          []string
+	startCalls      int
+	routingCalls    int
+	attemptCalls    int
+	completionCalls int
+	failureCalls    int
+	startErr        error
+	routingErr      error
+	attemptErr      error
+	completionErr   error
+	failureErr      error
+}
+
+func (stub *stubExecutionRecorder) StartRequest(_ context.Context, start execution.StartRequest) (execution.GatewayRequest, error) {
+	stub.startCalls++
+	stub.events = append(stub.events, "start_request")
+	stub.start = start
+	if stub.startErr != nil {
+		return execution.GatewayRequest{}, stub.startErr
+	}
+	return execution.GatewayRequest{ID: start.ID, Status: execution.RequestAuthorized, Version: 1}, nil
+}
+
+func (stub *stubExecutionRecorder) MarkRouting(_ context.Context, request execution.GatewayRequest) (execution.GatewayRequest, error) {
+	stub.routingCalls++
+	stub.events = append(stub.events, "mark_routing")
+	if stub.routingErr != nil {
+		return execution.GatewayRequest{}, stub.routingErr
+	}
+	request.Status = execution.RequestRouting
+	request.Version++
+	return request, nil
+}
+
+func (stub *stubExecutionRecorder) FailRequest(
+	_ context.Context,
+	request execution.GatewayRequest,
+	status execution.RequestStatus,
+	reason string,
+) (execution.GatewayRequest, error) {
+	stub.failureCalls++
+	stub.events = append(stub.events, "fail_request")
+	stub.failedStatus, stub.failedReason = status, reason
+	if stub.failureErr != nil {
+		return execution.GatewayRequest{}, stub.failureErr
+	}
+	request.Status = status
+	request.Version++
+	return request, nil
+}
+
+func (stub *stubExecutionRecorder) StartAttempt(
+	_ context.Context,
+	request execution.GatewayRequest,
+	deploymentID string,
+) (execution.GatewayRequest, execution.RouteAttempt, error) {
+	stub.attemptCalls++
+	stub.events = append(stub.events, "start_attempt")
+	if stub.attemptErr != nil {
+		return execution.GatewayRequest{}, execution.RouteAttempt{}, stub.attemptErr
+	}
+	request.Status = execution.RequestRunning
+	request.Version++
+	request.AttemptCount++
+	return request, execution.RouteAttempt{
+		ID: "60000000-0000-4000-8000-000000000099", RequestID: request.ID,
+		AttemptNo: request.AttemptCount, DeploymentID: deploymentID,
+		Status: execution.AttemptConnecting, Version: 2,
+	}, nil
+}
+
+func (stub *stubExecutionRecorder) CompleteAttempt(
+	_ context.Context,
+	request execution.GatewayRequest,
+	attempt execution.RouteAttempt,
+	outcome execution.AttemptOutcome,
+) (execution.GatewayRequest, execution.RouteAttempt, error) {
+	stub.completionCalls++
+	stub.events = append(stub.events, "complete_attempt")
+	stub.outcome = outcome
+	if stub.completionErr != nil {
+		return execution.GatewayRequest{}, execution.RouteAttempt{}, stub.completionErr
+	}
+	request.Status = outcome.RequestStatus
+	request.Version++
+	attempt.Status = outcome.AttemptStatus
+	attempt.Version++
+	return request, attempt, nil
 }
 
 func (stub *stubChatExecutor) Execute(

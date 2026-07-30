@@ -18,6 +18,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
@@ -108,7 +109,7 @@ func (problem *requestProblem) publicError() *apierror.Error {
 	}, nil)
 }
 
-func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecutor) http.Handler {
+func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecutor, recorder execution.Recorder) http.Handler {
 	methodError := newRequestProblem(
 		http.StatusMethodNotAllowed,
 		"METHOD_NOT_ALLOWED",
@@ -140,28 +141,91 @@ func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecuto
 			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 			return
 		}
+		var recordedRequest execution.GatewayRequest
+		if recorder != nil {
+			recordedRequest, err = startExecutionRecord(request, normalized, recorder)
+			if err != nil {
+				apierror.WriteHTTP(writer, executionRecordPublicError(err), requestID, "gateway_error")
+				return
+			}
+			recordedRequest, err = recorder.MarkRouting(request.Context(), recordedRequest)
+			if err != nil {
+				apierror.WriteHTTP(writer, executionRecordPublicError(err), requestID, "gateway_error")
+				return
+			}
+		}
 		selection, err := selectInitialRoute(request, normalized, routeSelector)
 		if err != nil {
+			if recorder != nil {
+				err = finalizeRequestFailure(request.Context(), recorder, recordedRequest, err)
+			}
 			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 			return
 		}
 		if executor == nil {
+			if recorder != nil {
+				if recordErr := failRecordedRequest(request.Context(), recorder, recordedRequest, execution.RequestFailed, "execution_not_implemented"); recordErr != nil {
+					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
+					return
+				}
+			}
 			apierror.WriteHTTP(writer, notImplemented, requestID, "gateway_error")
 			return
 		}
 		if normalized.ProviderRequest.Stream {
+			if recorder != nil {
+				if recordErr := failRecordedRequest(request.Context(), recorder, recordedRequest, execution.RequestFailed, "streaming_not_implemented"); recordErr != nil {
+					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
+					return
+				}
+			}
 			apierror.WriteHTTP(writer, streamingNotImplemented, requestID, "gateway_error")
 			return
 		}
+		var recordedAttempt execution.RouteAttempt
+		if recorder != nil {
+			updatedRequest, startedAttempt, startErr := recorder.StartAttempt(
+				request.Context(), recordedRequest, selection.Candidate.Deployment.ID,
+			)
+			if startErr != nil {
+				_ = failRecordedRequest(request.Context(), recorder, recordedRequest, execution.RequestFailed, "attempt_record_unavailable")
+				apierror.WriteHTTP(writer, executionRecordPublicError(startErr), requestID, "gateway_error")
+				return
+			}
+			recordedRequest, recordedAttempt = updatedRequest, startedAttempt
+		}
 		result, err := executor.Execute(request.Context(), selection, normalized.ProviderRequest.Clone())
 		if err != nil {
+			if recorder != nil {
+				if recordErr := completeRecordedAttempt(request.Context(), recorder, recordedRequest, recordedAttempt, attemptOutcomeForError(err)); recordErr != nil {
+					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
+					return
+				}
+			}
 			apierror.WriteHTTP(writer, executionPublicError(err), requestID, "gateway_error")
 			return
 		}
 		response, err := projectChatCompletion(result, normalized.ProviderRequest.LogicalModel, requestID)
 		if err != nil {
+			if recorder != nil {
+				if recordErr := completeRecordedAttempt(request.Context(), recorder, recordedRequest, recordedAttempt, attemptOutcomeForError(err)); recordErr != nil {
+					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
+					return
+				}
+			}
 			apierror.WriteHTTP(writer, executionPublicError(err), requestID, "gateway_error")
 			return
+		}
+		if recorder != nil {
+			outcome := execution.AttemptOutcome{
+				AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
+				HeadersReceived: true, EndReason: "completed", ProviderRequestID: result.ProviderRequestID,
+				Usage: result.Usage,
+			}
+			if recordErr := completeRecordedAttempt(request.Context(), recorder, recordedRequest, recordedAttempt, outcome); recordErr != nil {
+				apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
+				return
+			}
 		}
 		writeChatCompletionJSON(writer, response, requestID)
 	})

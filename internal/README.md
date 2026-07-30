@@ -38,4 +38,5 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `openaiadapter`：官方 OpenAI Chat Completions 真实适配器；HTTPS、Provider Secret 最短解析边界、普通/SSE/Usage/错误归一化与离线一致性 Fixture。
 - `upstreamhttp`：进程级 Provider HTTP Client、TLS/连接/首部/总超时、连接池复用、禁止重定向与出站 Header 信任边界。
 - `proxy`：一个已选 Deployment 对应一次 Adapter/HTTP/Parse Attempt；只返回 Normalized Response 或安全分类，不内置重试。
+- `execution`：可信 GatewayRequest、独立 RouteAttempt、乐观版本状态迁移、追加式状态证据和无内容 Usage Summary 的 PostgreSQL 记录边界。
 - `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

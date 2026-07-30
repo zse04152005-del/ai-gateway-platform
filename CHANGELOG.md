@@ -11,6 +11,7 @@
 - Added tenant-safe catalog route candidates and deterministic first-healthy priority selection with request capability filtering and unified no-candidate/infrastructure errors.
 - Added a process-wide hardened upstream HTTP client with bounded connection/TLS/header/total timeouts, reusable pools, redirect and ambient-proxy refusal, and outbound header isolation.
 - Added one-attempt non-stream chat execution through the selected adapter, unified logical-model responses with complete usage/tool/finish projection, and provider-neutral safe error mapping.
+- Added durable GatewayRequest and per-physical-call RouteAttempt lifecycles with optimistic versions, database-enforced transitions, append-only status evidence, presence-preserving usage summaries, and fail-closed gateway integration.
 
 - 建立项目总纲、设计审视和可追踪开发执行清单。
 - 建立 Git 忽略、行尾、编辑器和文档治理基线。
