@@ -11,6 +11,7 @@
 - [`protocol-canary.md`](./protocol-canary.md)：最小成本真实协议探针、漂移 Finding、安全结果和周期调度边界。
 - [`normalized-provider-types.md`](./normalized-provider-types.md)：P05 已实现的 Request/Response/Chunk/Error/Usage 可执行类型契约。
 - [`non-stream-chat-execution.md`](./non-stream-chat-execution.md)：单 Attempt 普通代理、统一响应、Usage/Finish/Tool Call 与安全错误映射。
+- [`sse-heartbeat.md`](./sse-heartbeat.md)：可选 Gateway SSE comment 心跳、客户端开关、频率治理和超时语义隔离。
 - [`error-and-retry-semantics.md`](./error-and-retry-semantics.md)：公开错误、重试与部分失败语义。
 
 兼容性原则：

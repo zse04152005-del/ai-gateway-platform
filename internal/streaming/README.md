@@ -30,3 +30,16 @@ Provider message-start/heartbeat/extension/usage events are upstream progress fa
 - total timeout: no additional retry budget; it is partial only when output already started.
 
 Every controller-owned timeout cancels the same Context used by upstream HTTP, closes the Adapter stream/response Body, and remains discoverable through `errors.Is`, `Failure`, and `Snapshot` even when closing the socket causes a lower-level read error.
+
+## Optional gateway heartbeat
+
+`Heartbeat` is a request-scoped, blocking runner that writes the fixed SSE comment `: gateway-heartbeat` through `sse.Writer`. It never writes a `data:` field, creates a `NormalizedChunk`, changes model Sequence, or contributes to Usage.
+
+- The platform owns the interval (10 ms～5 min at the component boundary); clients can only send `X-AI-Gateway-SSE-Heartbeat: on|off` and cannot request a frequency.
+- `ResolveHeartbeatOptions` treats an absent header as enabled, accepts exact lowercase `on`/`off`, and rejects ambiguous/custom values.
+- Disabled mode creates no ticker and touches neither the writer nor timeout recorder.
+- Enabled `Run` owns and stops exactly one ticker, creates no hidden Goroutine, and exits on Context cancellation or the first write/recording failure.
+- A heartbeat is counted only after `WriteComment` succeeds and Flush completes. Recording it via `TimeoutController.RecordGatewayHeartbeat` does not advance first-token or no-progress state.
+- `HeartbeatSnapshot` exposes only start/last-send times and counts, never model or Provider content.
+
+The eventual stream executor may run `Heartbeat.Run` in one explicitly owned Goroutine. `sse.Writer` serializes complete model and comment events, while the shared request Context guarantees cancellation and cleanup.
