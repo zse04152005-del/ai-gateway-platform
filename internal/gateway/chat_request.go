@@ -108,7 +108,7 @@ func (problem *requestProblem) publicError() *apierror.Error {
 	}, nil)
 }
 
-func newChatCompletionsHandler(routeSelector RouteSelector) http.Handler {
+func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecutor) http.Handler {
 	methodError := newRequestProblem(
 		http.StatusMethodNotAllowed,
 		"METHOD_NOT_ALLOWED",
@@ -118,6 +118,10 @@ func newChatCompletionsHandler(routeSelector RouteSelector) http.Handler {
 	notImplemented := apierror.MustNew(apierror.Definition{
 		Status: http.StatusNotImplemented, Code: "CHAT_EXECUTION_NOT_IMPLEMENTED",
 		Message: "Chat execution is not implemented yet", Type: "gateway_error",
+	}, nil)
+	streamingNotImplemented := apierror.MustNew(apierror.Definition{
+		Status: http.StatusNotImplemented, Code: "CHAT_STREAMING_NOT_IMPLEMENTED",
+		Message: "Streaming chat execution is not implemented yet", Type: "gateway_error",
 	}, nil)
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requestID := correlation.RequestID(request.Context())
@@ -136,23 +140,46 @@ func newChatCompletionsHandler(routeSelector RouteSelector) http.Handler {
 			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 			return
 		}
-		if err := selectInitialRoute(request, normalized, routeSelector); err != nil {
+		selection, err := selectInitialRoute(request, normalized, routeSelector)
+		if err != nil {
 			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 			return
 		}
-		apierror.WriteHTTP(writer, notImplemented, requestID, "gateway_error")
+		if executor == nil {
+			apierror.WriteHTTP(writer, notImplemented, requestID, "gateway_error")
+			return
+		}
+		if normalized.ProviderRequest.Stream {
+			apierror.WriteHTTP(writer, streamingNotImplemented, requestID, "gateway_error")
+			return
+		}
+		result, err := executor.Execute(request.Context(), selection, normalized.ProviderRequest.Clone())
+		if err != nil {
+			apierror.WriteHTTP(writer, executionPublicError(err), requestID, "gateway_error")
+			return
+		}
+		response, err := projectChatCompletion(result, normalized.ProviderRequest.LogicalModel, requestID)
+		if err != nil {
+			apierror.WriteHTTP(writer, executionPublicError(err), requestID, "gateway_error")
+			return
+		}
+		writeChatCompletionJSON(writer, response, requestID)
 	})
 }
 
-func selectInitialRoute(request *http.Request, normalized normalizedChatRequest, routeSelector RouteSelector) error {
+func selectInitialRoute(
+	request *http.Request,
+	normalized normalizedChatRequest,
+	routeSelector RouteSelector,
+) (routing.Selection, error) {
 	if routeSelector == nil {
-		return routeUnavailable(errors.New("route selector is not configured"))
+		return routing.Selection{}, routeUnavailable(errors.New("route selector is not configured"))
 	}
 	principal, ok := keyauth.PrincipalFromContext(request.Context())
 	if !ok {
-		return routeUnavailable(errors.New("trusted authentication principal is missing"))
+		return routing.Selection{}, routeUnavailable(errors.New("trusted authentication principal is missing"))
 	}
-	_, err := routeSelector.Select(request.Context(), routing.SelectionRequest{
+	selection, err := routeSelector.Select(request.Context(), routing.SelectionRequest{
 		Access: catalog.Access{
 			TenantID: principal.TenantID, ProjectID: principal.ProjectID,
 			KeyAllowedModels: principal.AllowedModels,
@@ -160,16 +187,16 @@ func selectInitialRoute(request *http.Request, normalized normalizedChatRequest,
 		Request: normalized.ProviderRequest.Clone(),
 	})
 	if err == nil {
-		return nil
+		return selection, nil
 	}
 	if errors.Is(err, routing.ErrNoCandidate) {
-		return apierror.MustNew(apierror.Definition{
+		return routing.Selection{}, apierror.MustNew(apierror.Definition{
 			Status: http.StatusServiceUnavailable, Code: "MODEL_UNAVAILABLE",
 			Message: "No compatible healthy deployment is available", Type: "gateway_error",
 			Param: "model", Retryable: true, RetryAfter: time.Second,
 		}, err)
 	}
-	return routeUnavailable(err)
+	return routing.Selection{}, routeUnavailable(err)
 }
 
 func routeUnavailable(cause error) *apierror.Error {

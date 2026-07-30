@@ -15,6 +15,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action gateway
 
 进程同时创建唯一的共享上游 HTTP Client。连接/TLS/响应头/非流式总超时、连接池和响应 Header 上限均由 `UPSTREAM_HTTP_*` 配置控制；关闭时主动释放 idle 连接。Client 不读取环境代理、不跟随 Provider 重定向，并在发送前剥离客户端代理链、Cookie 和 hop-by-hop Header。Provider Adapter 生成的供应商认证 Header 保留在独立的出站请求中，入站 Virtual Key 从不复制到该请求。
 
+非流式 Chat 已注册 `mock` 与 `openai` Factory，并按选定 Deployment 构建 Adapter、执行一次共享 HTTP 调用、解析 Normalized Response，再投影为统一 OpenAI-compatible JSON。开发环境的 OpenAI 凭据通过 PostgreSQL Secret Reference 和本地 Envelope Manager 在请求构造最短边界解析；未配置 Resolver 时 fail closed，不允许从环境变量或目录记录读取明文 Provider Key。
+
 ## 数据面认证
 
 - 每个 `/v1/*` 请求必须恰好包含一个 `Authorization: Bearer <virtual-credential>`。

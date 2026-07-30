@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -21,7 +22,12 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/gateway"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/mockadapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/openaiadapter"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/provideradapter"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/providersecret"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 )
@@ -128,7 +134,11 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create route selector: %w", err)
 	}
-	applicationHandler, err := gateway.NewHandler(authenticator, modelCatalog, routeSelector)
+	chatExecutor, err := newChatExecutor(database, cfg, upstreamClient)
+	if err != nil {
+		return fmt.Errorf("create chat executor: %w", err)
+	}
+	applicationHandler, err := gateway.NewExecutableHandler(authenticator, modelCatalog, routeSelector, chatExecutor)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)
 	}
@@ -166,6 +176,72 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 		logger.Info(ctx, "HTTP server stopped", observability.Fields{})
 	}
 	return runErr
+}
+
+type optionalProviderSecretResolver struct {
+	manager *providersecret.Manager
+}
+
+func (resolver optionalProviderSecretResolver) Resolve(
+	ctx context.Context,
+	locator providersecret.Locator,
+) ([]byte, error) {
+	if resolver.manager == nil {
+		return nil, providersecret.ErrBackendUnavailable
+	}
+	return resolver.manager.Resolve(ctx, locator)
+}
+
+func newChatExecutor(
+	database *sql.DB,
+	cfg config.Config,
+	client *upstreamhttp.Client,
+) (*proxy.NonStreamExecutor, error) {
+	if database == nil {
+		return nil, errors.New("chat executor database must not be nil")
+	}
+	if client == nil {
+		return nil, errors.New("chat executor HTTP client must not be nil")
+	}
+	secretResolver := optionalProviderSecretResolver{}
+	if len(cfg.Security.LocalEnvelopeKey) > 0 {
+		cipher, err := providersecret.NewLocalCipher(
+			cfg.Security.LocalEnvelopeKeyVersion,
+			cfg.Security.LocalEnvelopeKey,
+			nil,
+			rand.Reader,
+		)
+		clear(cfg.Security.LocalEnvelopeKey)
+		if err != nil {
+			return nil, fmt.Errorf("create local provider secret cipher: %w", err)
+		}
+		store, err := providersecret.NewPostgresStore(database)
+		if err != nil {
+			return nil, fmt.Errorf("create provider secret store: %w", err)
+		}
+		manager, err := providersecret.NewManager(store, cipher, nil, rand.Reader, time.Now)
+		if err != nil {
+			return nil, fmt.Errorf("create provider secret manager: %w", err)
+		}
+		secretResolver.manager = manager
+	}
+	openAIFactory, err := openaiadapter.NewFactory(openaiadapter.FactoryOptions{Secrets: secretResolver})
+	if err != nil {
+		return nil, fmt.Errorf("create OpenAI adapter factory: %w", err)
+	}
+	mockFactory, err := mockadapter.NewFactory(mockadapter.FactoryOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("create mock adapter factory: %w", err)
+	}
+	registry, err := provideradapter.NewRegistry(openAIFactory, mockFactory)
+	if err != nil {
+		return nil, fmt.Errorf("create provider adapter registry: %w", err)
+	}
+	executor, err := proxy.NewNonStreamExecutor(registry, client)
+	if err != nil {
+		return nil, fmt.Errorf("create non-stream executor: %w", err)
+	}
+	return executor, nil
 }
 
 func bootstrapLogger(service string) *observability.Logger {

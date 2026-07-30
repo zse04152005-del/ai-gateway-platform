@@ -10,6 +10,7 @@
 - [`adapter-conformance-suite.md`](./adapter-conformance-suite.md)：统一真实 HTTP Fixture 注册、强制矩阵、取消和错误安全断言。
 - [`protocol-canary.md`](./protocol-canary.md)：最小成本真实协议探针、漂移 Finding、安全结果和周期调度边界。
 - [`normalized-provider-types.md`](./normalized-provider-types.md)：P05 已实现的 Request/Response/Chunk/Error/Usage 可执行类型契约。
+- [`non-stream-chat-execution.md`](./non-stream-chat-execution.md)：单 Attempt 普通代理、统一响应、Usage/Finish/Tool Call 与安全错误映射。
 - [`error-and-retry-semantics.md`](./error-and-retry-semantics.md)：公开错误、重试与部分失败语义。
 
 兼容性原则：

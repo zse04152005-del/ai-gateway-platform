@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"net"
 	"strings"
 	"testing"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/providersecret"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 )
 
 func TestRunRejectsInvalidConfigurationBeforeListening(t *testing.T) {
@@ -83,6 +86,62 @@ func TestRunRejectsNilLifecycleInputs(t *testing.T) {
 	}
 	if err := run(context.Background(), validLookup(), nil); err == nil || !strings.Contains(err.Error(), "listen function") {
 		t.Fatalf("run(nil listen) error = %v", err)
+	}
+}
+
+func TestNewChatExecutorBuildsRegisteredRuntimeWithOptionalLocalSecrets(t *testing.T) {
+	cfg, err := config.Load(validLookup())
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	client, err := upstreamhttp.NewClient(upstreamhttp.Options{
+		ConnectTimeout:         cfg.UpstreamHTTP.ConnectTimeout,
+		KeepAlive:              cfg.UpstreamHTTP.KeepAlive,
+		TLSHandshakeTimeout:    cfg.UpstreamHTTP.TLSHandshakeTimeout,
+		ResponseHeaderTimeout:  cfg.UpstreamHTTP.ResponseHeaderTimeout,
+		TotalTimeout:           cfg.UpstreamHTTP.TotalTimeout,
+		IdleConnTimeout:        cfg.UpstreamHTTP.IdleConnTimeout,
+		ExpectContinueTimeout:  cfg.UpstreamHTTP.ExpectContinueTimeout,
+		MaxIdleConns:           cfg.UpstreamHTTP.MaxIdleConns,
+		MaxIdleConnsPerHost:    cfg.UpstreamHTTP.MaxIdleConnsPerHost,
+		MaxConnsPerHost:        cfg.UpstreamHTTP.MaxConnsPerHost,
+		MaxResponseHeaderBytes: cfg.UpstreamHTTP.MaxResponseHeaderBytes,
+	})
+	if err != nil {
+		t.Fatalf("upstreamhttp.NewClient() error = %v", err)
+	}
+	t.Cleanup(client.CloseIdleConnections)
+	database, err := sql.Open("postgres", cfg.Postgres.URL)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := database.Close(); closeErr != nil {
+			t.Errorf("database.Close() error = %v", closeErr)
+		}
+	})
+	if executor, buildErr := newChatExecutor(database, cfg, client); buildErr != nil || executor == nil {
+		t.Fatalf("newChatExecutor(no local key) = %#v, %v", executor, buildErr)
+	}
+	cfg.Security.LocalEnvelopeKey = bytes.Repeat([]byte{0x42}, 32)
+	if executor, buildErr := newChatExecutor(database, cfg, client); buildErr != nil || executor == nil {
+		t.Fatalf("newChatExecutor(local key) = %#v, %v", executor, buildErr)
+	}
+	if _, buildErr := newChatExecutor(nil, cfg, client); buildErr == nil {
+		t.Fatal("newChatExecutor(nil database) error = nil")
+	}
+	if _, buildErr := newChatExecutor(database, cfg, nil); buildErr == nil {
+		t.Fatal("newChatExecutor(nil client) error = nil")
+	}
+}
+
+func TestOptionalProviderSecretResolverFailsClosedWithoutManager(t *testing.T) {
+	_, err := (optionalProviderSecretResolver{}).Resolve(context.Background(), providersecret.Locator{
+		ProviderID: "11111111-1111-4111-8111-111111111111",
+		ID:         "22222222-2222-4222-8222-222222222222",
+	})
+	if !errors.Is(err, providersecret.ErrBackendUnavailable) {
+		t.Fatalf("Resolve() error = %v", err)
 	}
 }
 

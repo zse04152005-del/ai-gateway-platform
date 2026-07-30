@@ -19,3 +19,4 @@
 - [P06-T02 请求规范化](2026-07-30-p06-t02-chat-request-normalization.md)
 - [P06-T03 最小 Deployment 选择](2026-07-30-p06-t03-minimum-deployment-selection.md)
 - [P06-T04 上游 HTTP Client](2026-07-30-p06-t04-upstream-http-client.md)
+- [P06-T05 普通响应与统一输出](2026-07-30-p06-t05-non-stream-chat-execution.md)

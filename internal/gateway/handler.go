@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
@@ -27,6 +28,11 @@ type RouteSelector interface {
 	Select(context.Context, routing.SelectionRequest) (routing.Selection, error)
 }
 
+// ChatExecutor performs one already-selected provider attempt.
+type ChatExecutor interface {
+	Execute(context.Context, routing.Selection, adapter.NormalizedRequest) (adapter.NormalizedResponse, error)
+}
+
 // NewHandler protects every /v1 route while leaving unknown non-data-plane paths as safe 404s.
 func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog, selectors ...RouteSelector) (http.Handler, error) {
 	if authenticator == nil {
@@ -45,6 +51,37 @@ func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog, selector
 		}
 		routeSelector = selectors[0]
 	}
+	return newHandler(authenticator, modelCatalog, routeSelector, nil), nil
+}
+
+// NewExecutableHandler requires the complete non-streaming execution chain.
+func NewExecutableHandler(
+	authenticator Authenticator,
+	modelCatalog ModelCatalog,
+	routeSelector RouteSelector,
+	executor ChatExecutor,
+) (http.Handler, error) {
+	if authenticator == nil {
+		return nil, errors.New("gateway authenticator must not be nil")
+	}
+	if modelCatalog == nil {
+		return nil, errors.New("gateway model catalog must not be nil")
+	}
+	if routeSelector == nil {
+		return nil, errors.New("gateway route selector must not be nil")
+	}
+	if executor == nil {
+		return nil, errors.New("gateway chat executor must not be nil")
+	}
+	return newHandler(authenticator, modelCatalog, routeSelector, executor), nil
+}
+
+func newHandler(
+	authenticator Authenticator,
+	modelCatalog ModelCatalog,
+	routeSelector RouteSelector,
+	executor ChatExecutor,
+) http.Handler {
 	notFound := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		apierror.WriteHTTP(writer, apierror.MustNew(apierror.Definition{
 			Status: http.StatusNotFound, Code: "NOT_FOUND",
@@ -53,8 +90,8 @@ func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog, selector
 	})
 	mux := http.NewServeMux()
 	mux.Handle("/v1/models", authenticator.Middleware(newModelsHandler(modelCatalog)))
-	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector)))
+	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector, executor)))
 	mux.Handle("/v1/", authenticator.Middleware(notFound))
 	mux.Handle("/", notFound)
-	return mux, nil
+	return mux
 }

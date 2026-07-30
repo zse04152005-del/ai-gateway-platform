@@ -109,6 +109,10 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '499':
+          $ref: '#/components/responses/ClientClosedRequest'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
         '502':
           $ref: '#/components/responses/ProviderFailure'
         '503':
@@ -496,7 +500,7 @@ components:
       properties:
         id:
           type: string
-          maxLength: 128
+          maxLength: 256
         type:
           const: function
         function:
@@ -533,7 +537,8 @@ components:
               description: JSON Schema for function arguments.
     ChatCompletionResponse:
       type: object
-      required: [id, object, created, model, choices]
+      additionalProperties: false
+      required: [id, object, created, model, choices, gateway]
       properties:
         id:
           type: string
@@ -559,13 +564,15 @@ components:
               message:
                 $ref: '#/components/schemas/AssistantMessage'
               finish_reason:
-                type: [string, 'null']
+                type: string
+                enum: [stop, length, tool_calls, content_filter, cancelled, error, unknown]
         usage:
           $ref: '#/components/schemas/Usage'
         gateway:
           $ref: '#/components/schemas/GatewayMetadata'
     AssistantMessage:
       type: object
+      additionalProperties: false
       required: [role, content]
       properties:
         role:
@@ -575,11 +582,11 @@ components:
         tool_calls:
           type: array
           items:
-            type: object
-            additionalProperties: true
+            $ref: '#/components/schemas/AssistantToolCall'
     Usage:
       type: object
-      required: [prompt_tokens, completion_tokens, total_tokens]
+      additionalProperties: false
+      required: [prompt_tokens, completion_tokens, total_tokens, source]
       properties:
         prompt_tokens:
           type: integer
@@ -592,14 +599,25 @@ components:
           minimum: 0
         prompt_tokens_details:
           type: object
+          additionalProperties: false
           properties:
             cached_tokens:
               type: integer
               minimum: 0
+            cache_write_tokens:
+              type: integer
+              minimum: 0
+            audio_tokens:
+              type: integer
+              minimum: 0
         completion_tokens_details:
           type: object
+          additionalProperties: false
           properties:
             reasoning_tokens:
+              type: integer
+              minimum: 0
+            audio_tokens:
               type: integer
               minimum: 0
         source:
@@ -607,6 +625,7 @@ components:
           enum: [provider, estimated, reconciled]
     GatewayMetadata:
       type: object
+      additionalProperties: false
       required: [request_id, attempt_count]
       properties:
         request_id:
@@ -897,6 +916,18 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     GatewayUnavailable:
       description: No healthy deployment or a required gateway dependency is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ClientClosedRequest:
+      description: The caller cancelled the request before a response completed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotImplemented:
+      description: The requested execution mode is not implemented in the current milestone
       content:
         application/json:
           schema:

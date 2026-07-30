@@ -2,9 +2,10 @@
 
 `POST /v1/chat/completions` is an authenticated, strict JSON boundary. This
 document describes the transport parser implemented by P06-T01. Routing and
-provider execution are separate stages; until those stages are connected, a
-valid request receives the explicit `501 CHAT_EXECUTION_NOT_IMPLEMENTED`
-response rather than a fabricated completion.
+provider execution remain separate auditable stages. P06-T05 now connects valid
+non-streaming requests to the selected Adapter and unified response; streaming
+requests still receive the explicit `501 CHAT_STREAMING_NOT_IMPLEMENTED` until
+P07, rather than being silently downgraded or given a fabricated completion.
 
 ## Envelope limits
 
@@ -62,4 +63,6 @@ an internal decoder error.
 The parser produces an internal validated transport value. P06-T02 now converts
 that value into `adapter.NormalizedRequest`, adds the trusted correlation and
 idempotency facts, and verifies normalized invariants before any deployment or
-provider is selected. See [Chat request normalization](chat-request-normalization.md).
+provider is selected. P06-T03～T05 then select one Deployment and execute one
+non-streaming Attempt. See [Chat request normalization](chat-request-normalization.md)
+and [non-stream Chat execution](non-stream-chat-execution.md).
