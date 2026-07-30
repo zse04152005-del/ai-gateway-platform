@@ -13,6 +13,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action gateway
 
 默认监听 `:8080`。启动前会调用统一配置加载器；缺少 `DATABASE_URL`、非开发环境缺少 `VIRTUAL_KEY_HASH_KEY`、地址格式错误或生命周期超时非法时，进程拒绝启动。`.env` 只由本地脚本导入，应用本身不会隐式读取文件。
 
+进程同时创建唯一的共享上游 HTTP Client。连接/TLS/响应头/非流式总超时、连接池和响应 Header 上限均由 `UPSTREAM_HTTP_*` 配置控制；关闭时主动释放 idle 连接。Client 不读取环境代理、不跟随 Provider 重定向，并在发送前剥离客户端代理链、Cookie 和 hop-by-hop Header。Provider Adapter 生成的供应商认证 Header 保留在独立的出站请求中，入站 Virtual Key 从不复制到该请求。
+
 ## 数据面认证
 
 - 每个 `/v1/*` 请求必须恰好包含一个 `Authorization: Bearer <virtual-credential>`。

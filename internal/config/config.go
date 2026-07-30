@@ -34,14 +34,15 @@ type LookupEnv func(string) (string, bool)
 // Provider credentials and tenant policies are versioned business configuration,
 // so they deliberately do not belong in this runtime structure.
 type Config struct {
-	Environment EnvironmentConfig
-	HTTP        HTTPConfig
-	Postgres    PostgresConfig
-	Redis       RedisConfig
-	Kafka       KafkaConfig
-	ClickHouse  ClickHouseConfig
-	Telemetry   TelemetryConfig
-	Security    SecurityConfig
+	Environment  EnvironmentConfig
+	HTTP         HTTPConfig
+	UpstreamHTTP UpstreamHTTPConfig
+	Postgres     PostgresConfig
+	Redis        RedisConfig
+	Kafka        KafkaConfig
+	ClickHouse   ClickHouseConfig
+	Telemetry    TelemetryConfig
+	Security     SecurityConfig
 }
 
 // EnvironmentConfig contains deployment environment and logging settings.
@@ -57,6 +58,21 @@ type HTTPConfig struct {
 	MetricsAddr       string
 	ShutdownTimeout   time.Duration
 	ReadHeaderTimeout time.Duration
+}
+
+// UpstreamHTTPConfig contains the shared provider connection-pool limits.
+type UpstreamHTTPConfig struct {
+	ConnectTimeout         time.Duration
+	KeepAlive              time.Duration
+	TLSHandshakeTimeout    time.Duration
+	ResponseHeaderTimeout  time.Duration
+	TotalTimeout           time.Duration
+	IdleConnTimeout        time.Duration
+	ExpectContinueTimeout  time.Duration
+	MaxIdleConns           int
+	MaxIdleConnsPerHost    int
+	MaxConnsPerHost        int
+	MaxResponseHeaderBytes int64
 }
 
 // PostgresConfig contains the PostgreSQL connection setting.
@@ -132,6 +148,10 @@ func Load(lookup LookupEnv) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	upstreamHTTP, err := loadUpstreamHTTP(lookup)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		Environment: EnvironmentConfig{
@@ -145,6 +165,7 @@ func Load(lookup LookupEnv) (Config, error) {
 			ShutdownTimeout:   shutdownTimeout,
 			ReadHeaderTimeout: readHeaderTimeout,
 		},
+		UpstreamHTTP: upstreamHTTP,
 		Postgres: PostgresConfig{
 			URL: valueOrDefault(lookup, "DATABASE_URL", ""),
 		},
@@ -202,6 +223,7 @@ func (c Config) Validate() error {
 	if c.HTTP.ReadHeaderTimeout <= 0 {
 		problems = append(problems, "HTTP_READ_HEADER_TIMEOUT must be greater than zero")
 	}
+	problems = append(problems, validateUpstreamHTTP(c.UpstreamHTTP)...)
 	if err := validateURL("DATABASE_URL", c.Postgres.URL, "postgres", "postgresql"); err != nil {
 		problems = append(problems, err.Error())
 	}
@@ -274,6 +296,115 @@ func durationValue(lookup LookupEnv, key string, fallback time.Duration) (time.D
 		return 0, fmt.Errorf("%s must be a duration: %w", key, err)
 	}
 	return value, nil
+}
+
+func loadUpstreamHTTP(lookup LookupEnv) (UpstreamHTTPConfig, error) {
+	connectTimeout, err := durationValue(lookup, "UPSTREAM_HTTP_CONNECT_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	keepAlive, err := durationValue(lookup, "UPSTREAM_HTTP_KEEPALIVE", 30*time.Second)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	tlsTimeout, err := durationValue(lookup, "UPSTREAM_HTTP_TLS_HANDSHAKE_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	headerTimeout, err := durationValue(lookup, "UPSTREAM_HTTP_RESPONSE_HEADER_TIMEOUT", 60*time.Second)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	totalTimeout, err := durationValue(lookup, "UPSTREAM_HTTP_TOTAL_TIMEOUT", 2*time.Minute)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	idleTimeout, err := durationValue(lookup, "UPSTREAM_HTTP_IDLE_CONN_TIMEOUT", 90*time.Second)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	expectTimeout, err := durationValue(lookup, "UPSTREAM_HTTP_EXPECT_CONTINUE_TIMEOUT", time.Second)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	maxIdle, err := intValue(lookup, "UPSTREAM_HTTP_MAX_IDLE_CONNS", 512)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	maxIdlePerHost, err := intValue(lookup, "UPSTREAM_HTTP_MAX_IDLE_CONNS_PER_HOST", 64)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	maxPerHost, err := intValue(lookup, "UPSTREAM_HTTP_MAX_CONNS_PER_HOST", 128)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	maxHeaderBytes, err := intValue(lookup, "UPSTREAM_HTTP_MAX_RESPONSE_HEADER_BYTES", 64<<10)
+	if err != nil {
+		return UpstreamHTTPConfig{}, err
+	}
+	return UpstreamHTTPConfig{
+		ConnectTimeout: connectTimeout, KeepAlive: keepAlive,
+		TLSHandshakeTimeout: tlsTimeout, ResponseHeaderTimeout: headerTimeout,
+		TotalTimeout: totalTimeout, IdleConnTimeout: idleTimeout,
+		ExpectContinueTimeout: expectTimeout, MaxIdleConns: maxIdle,
+		MaxIdleConnsPerHost: maxIdlePerHost, MaxConnsPerHost: maxPerHost,
+		MaxResponseHeaderBytes: int64(maxHeaderBytes),
+	}, nil
+}
+
+func validateUpstreamHTTP(config UpstreamHTTPConfig) []string {
+	var problems []string
+	positiveDurations := []struct {
+		name  string
+		value time.Duration
+	}{
+		{name: "UPSTREAM_HTTP_CONNECT_TIMEOUT", value: config.ConnectTimeout},
+		{name: "UPSTREAM_HTTP_KEEPALIVE", value: config.KeepAlive},
+		{name: "UPSTREAM_HTTP_TLS_HANDSHAKE_TIMEOUT", value: config.TLSHandshakeTimeout},
+		{name: "UPSTREAM_HTTP_RESPONSE_HEADER_TIMEOUT", value: config.ResponseHeaderTimeout},
+		{name: "UPSTREAM_HTTP_TOTAL_TIMEOUT", value: config.TotalTimeout},
+		{name: "UPSTREAM_HTTP_IDLE_CONN_TIMEOUT", value: config.IdleConnTimeout},
+	}
+	for _, setting := range positiveDurations {
+		if setting.value <= 0 {
+			problems = append(problems, setting.name+" must be greater than zero")
+		}
+	}
+	if config.ConnectTimeout > 30*time.Second {
+		problems = append(problems, "UPSTREAM_HTTP_CONNECT_TIMEOUT must not exceed 30s")
+	}
+	if config.KeepAlive > 5*time.Minute {
+		problems = append(problems, "UPSTREAM_HTTP_KEEPALIVE must not exceed 5m")
+	}
+	if config.TLSHandshakeTimeout > 30*time.Second {
+		problems = append(problems, "UPSTREAM_HTTP_TLS_HANDSHAKE_TIMEOUT must not exceed 30s")
+	}
+	if config.ResponseHeaderTimeout > 10*time.Minute {
+		problems = append(problems, "UPSTREAM_HTTP_RESPONSE_HEADER_TIMEOUT must not exceed 10m")
+	}
+	if config.TotalTimeout > 30*time.Minute {
+		problems = append(problems, "UPSTREAM_HTTP_TOTAL_TIMEOUT must not exceed 30m")
+	}
+	if config.IdleConnTimeout > 10*time.Minute {
+		problems = append(problems, "UPSTREAM_HTTP_IDLE_CONN_TIMEOUT must not exceed 10m")
+	}
+	if config.ExpectContinueTimeout < 0 || config.ExpectContinueTimeout > 30*time.Second {
+		problems = append(problems, "UPSTREAM_HTTP_EXPECT_CONTINUE_TIMEOUT must be between 0s and 30s")
+	}
+	if config.MaxIdleConns < 1 || config.MaxIdleConns > 100_000 {
+		problems = append(problems, "UPSTREAM_HTTP_MAX_IDLE_CONNS must be between 1 and 100000")
+	}
+	if config.MaxIdleConnsPerHost < 1 || config.MaxIdleConnsPerHost > config.MaxIdleConns {
+		problems = append(problems, "UPSTREAM_HTTP_MAX_IDLE_CONNS_PER_HOST must be positive and not exceed UPSTREAM_HTTP_MAX_IDLE_CONNS")
+	}
+	if config.MaxConnsPerHost < config.MaxIdleConnsPerHost || config.MaxConnsPerHost > 100_000 {
+		problems = append(problems, "UPSTREAM_HTTP_MAX_CONNS_PER_HOST must cover the per-host idle limit and not exceed 100000")
+	}
+	if config.MaxResponseHeaderBytes < 1024 || config.MaxResponseHeaderBytes > 1<<20 {
+		problems = append(problems, "UPSTREAM_HTTP_MAX_RESPONSE_HEADER_BYTES must be between 1024 and 1048576")
+	}
+	return problems
 }
 
 func decodeEnvelopeKey(raw string) ([]byte, error) {

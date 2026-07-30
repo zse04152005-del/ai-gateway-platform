@@ -4,6 +4,12 @@
 
 本地 `.env` 由启动工具加载，应用本身不隐式搜索文件，避免生产环境意外读取工作目录中的秘密。
 
+## 上游 HTTP 连接池
+
+Gateway 只在进程启动时创建一个共享 Provider HTTP Client。`UPSTREAM_HTTP_CONNECT_TIMEOUT`、`UPSTREAM_HTTP_TLS_HANDSHAKE_TIMEOUT`、`UPSTREAM_HTTP_RESPONSE_HEADER_TIMEOUT`、`UPSTREAM_HTTP_TOTAL_TIMEOUT`、`UPSTREAM_HTTP_IDLE_CONN_TIMEOUT` 与 `UPSTREAM_HTTP_EXPECT_CONTINUE_TIMEOUT` 分别控制连接、TLS、首部、非流式总时长、空闲复用和 100-continue 等待；非法值在监听前 fail closed。
+
+`UPSTREAM_HTTP_MAX_IDLE_CONNS`、`UPSTREAM_HTTP_MAX_IDLE_CONNS_PER_HOST` 和 `UPSTREAM_HTTP_MAX_CONNS_PER_HOST` 控制全局/单 Provider 连接池，后两者不能形成“空闲上限大于总连接上限”的无效组合。`UPSTREAM_HTTP_MAX_RESPONSE_HEADER_BYTES` 限制 Provider 响应头为 1 KiB～1 MiB。默认值见 `.env.example`，安全与复用语义见 [`internal/upstreamhttp`](../upstreamhttp/README.md)。
+
 ## Mock Provider 最小配置
 
 `config.LoadMockProvider` 只读取环境、日志、`MOCK_PROVIDER_HTTP_ADDR` 和共享 HTTP 超时，不要求任何数据库、缓存、消息、分析或遥测地址。它只允许 development/test，并强制 Loopback 监听；staging/production 或公网地址会在打开 Listener 前 fail closed。

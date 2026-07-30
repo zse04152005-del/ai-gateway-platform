@@ -32,6 +32,15 @@ func TestLoadValidDevelopmentConfig(t *testing.T) {
 	if cfg.Security.VirtualKeyAuthCacheTTL != 2*time.Second {
 		t.Fatalf("virtual key auth cache TTL = %v, want 2s", cfg.Security.VirtualKeyAuthCacheTTL)
 	}
+	if cfg.UpstreamHTTP.ConnectTimeout != 5*time.Second ||
+		cfg.UpstreamHTTP.ResponseHeaderTimeout != time.Minute ||
+		cfg.UpstreamHTTP.TotalTimeout != 2*time.Minute ||
+		cfg.UpstreamHTTP.MaxIdleConns != 512 ||
+		cfg.UpstreamHTTP.MaxIdleConnsPerHost != 64 ||
+		cfg.UpstreamHTTP.MaxConnsPerHost != 128 ||
+		cfg.UpstreamHTTP.MaxResponseHeaderBytes != 64<<10 {
+		t.Fatalf("unexpected upstream HTTP defaults: %#v", cfg.UpstreamHTTP)
+	}
 }
 
 func TestLoadRejectsProductionLocalEnvelopeKey(t *testing.T) {
@@ -154,6 +163,36 @@ func TestLoadRejectsUnsafeVirtualKeyAuthCacheTTL(t *testing.T) {
 	_, err := Load(mapLookup(values))
 	if err == nil || !strings.Contains(err.Error(), "VIRTUAL_KEY_AUTH_CACHE_TTL") {
 		t.Fatalf("Load() error = %v, want cache TTL validation", err)
+	}
+}
+
+func TestLoadRejectsInvalidUpstreamHTTPConfiguration(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "duration syntax", key: "UPSTREAM_HTTP_CONNECT_TIMEOUT", value: "never"},
+		{name: "connect bound", key: "UPSTREAM_HTTP_CONNECT_TIMEOUT", value: "31s"},
+		{name: "TLS bound", key: "UPSTREAM_HTTP_TLS_HANDSHAKE_TIMEOUT", value: "0s"},
+		{name: "header bound", key: "UPSTREAM_HTTP_RESPONSE_HEADER_TIMEOUT", value: "11m"},
+		{name: "total bound", key: "UPSTREAM_HTTP_TOTAL_TIMEOUT", value: "31m"},
+		{name: "expect bound", key: "UPSTREAM_HTTP_EXPECT_CONTINUE_TIMEOUT", value: "31s"},
+		{name: "integer syntax", key: "UPSTREAM_HTTP_MAX_IDLE_CONNS", value: "many"},
+		{name: "idle global", key: "UPSTREAM_HTTP_MAX_IDLE_CONNS", value: "0"},
+		{name: "idle per host", key: "UPSTREAM_HTTP_MAX_IDLE_CONNS_PER_HOST", value: "513"},
+		{name: "total per host", key: "UPSTREAM_HTTP_MAX_CONNS_PER_HOST", value: "63"},
+		{name: "header bytes", key: "UPSTREAM_HTTP_MAX_RESPONSE_HEADER_BYTES", value: "1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := validEnvironment()
+			values[test.key] = test.value
+			_, err := Load(mapLookup(values))
+			if err == nil || !strings.Contains(err.Error(), test.key) {
+				t.Fatalf("Load() error = %v, want %s validation", err, test.key)
+			}
+		})
 	}
 }
 

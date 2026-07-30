@@ -23,6 +23,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 )
 
 var version = "dev"
@@ -65,6 +66,23 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create gateway logger: %w", err)
 	}
+	upstreamClient, err := upstreamhttp.NewClient(upstreamhttp.Options{
+		ConnectTimeout:         cfg.UpstreamHTTP.ConnectTimeout,
+		KeepAlive:              cfg.UpstreamHTTP.KeepAlive,
+		TLSHandshakeTimeout:    cfg.UpstreamHTTP.TLSHandshakeTimeout,
+		ResponseHeaderTimeout:  cfg.UpstreamHTTP.ResponseHeaderTimeout,
+		TotalTimeout:           cfg.UpstreamHTTP.TotalTimeout,
+		IdleConnTimeout:        cfg.UpstreamHTTP.IdleConnTimeout,
+		ExpectContinueTimeout:  cfg.UpstreamHTTP.ExpectContinueTimeout,
+		MaxIdleConns:           cfg.UpstreamHTTP.MaxIdleConns,
+		MaxIdleConnsPerHost:    cfg.UpstreamHTTP.MaxIdleConnsPerHost,
+		MaxConnsPerHost:        cfg.UpstreamHTTP.MaxConnsPerHost,
+		MaxResponseHeaderBytes: cfg.UpstreamHTTP.MaxResponseHeaderBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("create upstream HTTP client: %w", err)
+	}
+	defer upstreamClient.CloseIdleConnections()
 	digestKey, err := cfg.ResolveVirtualKeyHashKey()
 	if err != nil {
 		return fmt.Errorf("resolve virtual credential digest key: %w", err)

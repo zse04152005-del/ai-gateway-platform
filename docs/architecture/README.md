@@ -12,3 +12,5 @@
 - [`model-catalog-schema.md`](model-catalog-schema.md)：Provider/LogicalModel/Deployment 分层、能力/区域契约与绑定漂移防护。
 - [`model-authorization-and-listing.md`](model-authorization-and-listing.md)：项目/Key 白名单交集、目录可用性与安全 `/v1/models`。
 - [`provider-secret-references.md`](provider-secret-references.md)：Provider 绑定引用、本地 AES-GCM 信封与 Vault/KMS Resolver 边界。
+- [`minimum-deployment-selection.md`](minimum-deployment-selection.md)：可信作用域候选、请求能力过滤与最小优先级选择。
+- [`upstream-http-client.md`](upstream-http-client.md)：进程级 Provider Client、分层超时、连接池和出站 Header 信任边界。
