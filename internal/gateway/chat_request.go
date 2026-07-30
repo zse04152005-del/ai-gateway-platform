@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
@@ -27,6 +28,7 @@ const (
 )
 
 var chatIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
+var chatExtendedIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$`)
 var chatToolNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$`)
 var safeParameterSegmentPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
@@ -120,8 +122,13 @@ func newChatCompletionsHandler() http.Handler {
 			apierror.WriteHTTP(writer, methodError.publicError(), requestID, "gateway_error")
 			return
 		}
-		if _, problem := parseChatCompletionRequest(writer, request); problem != nil {
+		parsed, problem := parseChatCompletionRequest(writer, request)
+		if problem != nil {
 			apierror.WriteHTTP(writer, problem.publicError(), requestID, "gateway_error")
+			return
+		}
+		if _, err := normalizeChatCompletionRequest(parsed, requestID, request.Header.Values(idempotencyKeyHeader)); err != nil {
+			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 			return
 		}
 		apierror.WriteHTTP(writer, notImplemented, requestID, "gateway_error")
@@ -320,6 +327,9 @@ func parseChatRequestObject(object map[string]json.RawMessage) (parsedChatReques
 	if parsed.User, problem = optionalString(object, "user", 256, true); problem != nil {
 		return parsedChatRequest{}, problem
 	}
+	if parsed.User != "" && (parsed.User != strings.TrimSpace(parsed.User) || strings.ContainsFunc(parsed.User, unicode.IsControl)) {
+		return parsedChatRequest{}, invalidParameter("user")
+	}
 	return parsed, nil
 }
 
@@ -373,7 +383,7 @@ func parseMessage(raw json.RawMessage, field string) (parsedChatMessage, *reques
 	if message.ToolCallID, problem = optionalString(object, "tool_call_id", 256, false); problem != nil {
 		return parsedChatMessage{}, problemWithPath(problem, field+".tool_call_id")
 	}
-	if message.ToolCallID != "" && !chatIdentifierPattern.MatchString(message.ToolCallID) {
+	if message.ToolCallID != "" && !chatExtendedIdentifierPattern.MatchString(message.ToolCallID) {
 		return parsedChatMessage{}, invalidParameter(field + ".tool_call_id")
 	}
 	if rawCalls, exists := object["tool_calls"]; exists {
@@ -473,7 +483,7 @@ func parseContentPart(raw json.RawMessage, field string) (parsedContentPart, *re
 		if problem != nil {
 			return parsedContentPart{}, problem
 		}
-		if url == "" || len(url) > 16*1024 {
+		if url == "" || url != strings.TrimSpace(url) || len(url) > 16*1024 || strings.ContainsFunc(url, unicode.IsControl) {
 			return parsedContentPart{}, invalidParameter(field + ".image_url.url")
 		}
 		detail, problem := optionalString(imageObject, "detail", 16, false)
@@ -511,7 +521,7 @@ func parseToolCalls(raw json.RawMessage, field string) ([]parsedToolCall, *reque
 		if problem != nil {
 			return nil, problem
 		}
-		if !chatIdentifierPattern.MatchString(identifier) {
+		if !chatExtendedIdentifierPattern.MatchString(identifier) {
 			return nil, invalidParameter(callField + ".id")
 		}
 		toolType, problem := requiredString(object, "type", callField+".type")
@@ -600,6 +610,9 @@ func parseTools(raw json.RawMessage) ([]parsedChatTool, *requestProblem) {
 		description, problem := optionalString(function, "description", 4096, true)
 		if problem != nil {
 			return nil, problemWithPath(problem, functionField+".description")
+		}
+		if description != strings.TrimSpace(description) {
+			return nil, invalidParameter(functionField + ".description")
 		}
 		parameters, exists := function["parameters"]
 		if !exists {
@@ -700,6 +713,9 @@ func parseResponseFormat(raw json.RawMessage) (*parsedResponseFormat, *requestPr
 		description, problem := optionalString(schemaObject, "description", 4096, true)
 		if problem != nil {
 			return nil, problemWithPath(problem, "response_format.json_schema.description")
+		}
+		if description != strings.TrimSpace(description) {
+			return nil, invalidParameter("response_format.json_schema.description")
 		}
 		schema, exists := schemaObject["schema"]
 		if !exists {

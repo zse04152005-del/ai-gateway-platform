@@ -43,6 +43,9 @@ func (request NormalizedRequest) Validate() error {
 	if err := validateIdentifier("logical_model", request.LogicalModel, 128); err != nil {
 		return err
 	}
+	if err := validateEndUserReference(request.EndUserReference); err != nil {
+		return err
+	}
 	if len(request.Messages) == 0 || len(request.Messages) > maxMessages {
 		return invalid("messages", fmt.Sprintf("must contain 1-%d entries", maxMessages))
 	}
@@ -328,10 +331,10 @@ func validateContentPart(field string, part ContentPart) error {
 		if part.Text == "" || len(part.Text) > maxTextBytes || !utf8.ValidString(part.Text) {
 			return invalid(field+".text", "must be non-empty valid UTF-8 within the size limit")
 		}
-		if part.Reference != "" || part.MediaType != "" {
+		if part.Reference != "" || part.MediaType != "" || part.Detail != "" {
 			return invalid(field, "text parts cannot contain media fields")
 		}
-	case ContentImageReference, ContentAudioReference:
+	case ContentImageReference:
 		if part.Text != "" {
 			return invalid(field+".text", "media reference parts cannot contain text")
 		}
@@ -340,6 +343,22 @@ func validateContentPart(field string, part ContentPart) error {
 		}
 		if err := validateOptionalIdentifier(field+".media_type", part.MediaType, 128); err != nil {
 			return err
+		}
+		if part.Detail != "" && part.Detail != "auto" && part.Detail != "low" && part.Detail != "high" {
+			return invalid(field+".detail", "must be auto, low, or high when present")
+		}
+	case ContentAudioReference:
+		if part.Text != "" {
+			return invalid(field+".text", "media reference parts cannot contain text")
+		}
+		if part.Reference == "" || part.Reference != strings.TrimSpace(part.Reference) || len(part.Reference) > maxMediaReferenceBytes || !utf8.ValidString(part.Reference) {
+			return invalid(field+".reference", "must be a non-empty trimmed reference within the size limit")
+		}
+		if err := validateOptionalIdentifier(field+".media_type", part.MediaType, 128); err != nil {
+			return err
+		}
+		if part.Detail != "" {
+			return invalid(field+".detail", "is only allowed for image references")
 		}
 	default:
 		return invalid(field+".kind", "must be text, image_reference, or audio_reference")
@@ -563,6 +582,16 @@ func validateOptionalIdentifier(field, value string, maxBytes int) error {
 		return nil
 	}
 	return validateIdentifier(field, value, maxBytes)
+}
+
+func validateEndUserReference(value string) error {
+	if value == "" {
+		return nil
+	}
+	if value != strings.TrimSpace(value) || len(value) > 256 || !utf8.ValidString(value) || containsControl(value) {
+		return invalid("end_user_reference", "must be trimmed printable UTF-8 within 256 bytes")
+	}
+	return nil
 }
 
 func validateFinitePointer(field string, value *float64) error {

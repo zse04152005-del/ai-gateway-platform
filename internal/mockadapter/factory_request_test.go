@@ -133,12 +133,12 @@ func TestBuildRequestPreservesNormalizedSemanticsAndNeverAddsCredential(t *testi
 	maxTokens := int64(128)
 	strict := true
 	request := adapter.NormalizedRequest{
-		RequestID: "req_full_fixture", LogicalModel: "logical-chat",
+		RequestID: "req_full_fixture", LogicalModel: "logical-chat", EndUserReference: "application-user-1",
 		Messages: []adapter.Message{{
 			Role: adapter.RoleUser,
 			Parts: []adapter.ContentPart{
 				{Kind: adapter.ContentText, Text: "describe"},
-				{Kind: adapter.ContentImageReference, Reference: "asset_image_1", MediaType: "image/png"},
+				{Kind: adapter.ContentImageReference, Reference: "asset_image_1", MediaType: "image/png", Detail: "high"},
 			},
 		}},
 		Temperature: &temperature, TopP: &topP, MaxOutputTokens: &maxTokens,
@@ -168,7 +168,7 @@ func TestBuildRequestPreservesNormalizedSemanticsAndNeverAddsCredential(t *testi
 	}
 	for _, wanted := range []string{
 		`"model":"mock-chat-v1"`, `"temperature":0.25`, `"top_p":0.9`, `"max_tokens":128`,
-		`"image_url"`, `"lookup"`, `"json_schema"`, `"mock_scenario":"fixed-usage"`,
+		`"user":"application-user-1"`, `"image_url"`, `"detail":"high"`, `"lookup"`, `"json_schema"`, `"mock_scenario":"fixed-usage"`,
 	} {
 		if !bytes.Contains(body, []byte(wanted)) {
 			t.Fatalf("request body missing %s: %s", wanted, body)

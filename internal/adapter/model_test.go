@@ -55,9 +55,14 @@ func TestNormalizedRequestValidationFailures(t *testing.T) {
 		wantField string
 	}{
 		{"request id", func(request *adapter.NormalizedRequest) { request.RequestID = "bad id" }, "request_id"},
+		{"end user", func(request *adapter.NormalizedRequest) { request.EndUserReference = "unsafe\nuser" }, "end_user_reference"},
 		{"messages missing", func(request *adapter.NormalizedRequest) { request.Messages = nil }, "messages"},
 		{"unknown role", func(request *adapter.NormalizedRequest) { request.Messages[0].Role = "provider_role" }, "messages[0].role"},
 		{"mixed content part", func(request *adapter.NormalizedRequest) { request.Messages[0].Parts[0].Reference = "ref" }, "messages[0].parts[0]"},
+		{"text image detail", func(request *adapter.NormalizedRequest) { request.Messages[0].Parts[0].Detail = "high" }, "messages[0].parts[0]"},
+		{"invalid image detail", func(request *adapter.NormalizedRequest) {
+			request.Messages[0].Parts[0] = adapter.ContentPart{Kind: adapter.ContentImageReference, Reference: "asset", Detail: "maximum"}
+		}, "messages[0].parts[0].detail"},
 		{"non finite temperature", func(request *adapter.NormalizedRequest) { value := math.NaN(); request.Temperature = &value }, "temperature"},
 		{"top p range", func(request *adapter.NormalizedRequest) { value := 1.1; request.TopP = &value }, "top_p"},
 		{"max tokens", func(request *adapter.NormalizedRequest) { value := int64(0); request.MaxOutputTokens = &value }, "max_output_tokens"},
@@ -182,8 +187,9 @@ func validRequest() adapter.NormalizedRequest {
 	maxOutputTokens := int64(256)
 	strict := true
 	return adapter.NormalizedRequest{
-		RequestID:    "req_p05_t02",
-		LogicalModel: "logical-chat",
+		RequestID:        "req_p05_t02",
+		LogicalModel:     "logical-chat",
+		EndUserReference: "application-user-1",
 		Messages: []adapter.Message{
 			{Role: adapter.RoleSystem, Parts: []adapter.ContentPart{{Kind: adapter.ContentText, Text: "system-secret-prompt"}}},
 			{Role: adapter.RoleUser, Parts: []adapter.ContentPart{{Kind: adapter.ContentText, Text: "user-secret-prompt"}}},

@@ -1,6 +1,7 @@
 package openaiadapter_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,6 +37,10 @@ func TestBuildRequestMapsOfficialFieldsAndResolvesCredentialLate(t *testing.T) {
 	maxOutput := int64(64)
 	strict := true
 	request := normalizedRequest(true)
+	request.EndUserReference = "application-user-1"
+	request.Messages[0].Parts = append(request.Messages[0].Parts, adapter.ContentPart{
+		Kind: adapter.ContentImageReference, Reference: "https://example.invalid/image.png", Detail: "low",
+	})
 	request.Temperature = &temperature
 	request.TopP = &topP
 	request.MaxOutputTokens = &maxOutput
@@ -69,13 +74,16 @@ func TestBuildRequestMapsOfficialFieldsAndResolvesCredentialLate(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("decode request: %v", err)
 	}
-	for _, name := range []string{"model", "messages", "stream", "stream_options", "temperature", "top_p", "max_completion_tokens", "stop", "tools", "tool_choice", "response_format"} {
+	for _, name := range []string{"model", "user", "messages", "stream", "stream_options", "temperature", "top_p", "max_completion_tokens", "stop", "tools", "tool_choice", "response_format"} {
 		if _, exists := payload[name]; !exists {
 			t.Fatalf("request field %q is missing: %s", name, body)
 		}
 	}
 	if _, exists := payload["max_tokens"]; exists {
 		t.Fatalf("deprecated max_tokens was emitted: %s", body)
+	}
+	if !bytes.Contains(body, []byte(`"detail":"low"`)) || !bytes.Contains(body, []byte(`"user":"application-user-1"`)) {
+		t.Fatalf("end-user or image detail was not preserved: %s", body)
 	}
 	if strings.Contains(string(body), fixtureCredential) {
 		t.Fatal("credential leaked into request JSON")

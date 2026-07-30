@@ -7,6 +7,7 @@
 ### Added
 
 - Added strict authenticated `/v1/chat/completions` request parsing with a 1 MiB body limit, recursive duplicate/unknown-field rejection, safe parameter errors, tools, multimodal parts, and structured-output validation.
+- Added lossless Chat request normalization with gateway-owned idempotency metadata, defensive copies, safe log views, end-user references, and image-detail preservation through the OpenAI and Mock adapters.
 
 - 建立项目总纲、设计审视和可追踪开发执行清单。
 - 建立 Git 忽略、行尾、编辑器和文档治理基线。

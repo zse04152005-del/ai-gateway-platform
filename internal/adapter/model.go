@@ -150,6 +150,7 @@ type ContentPart struct {
 	Text      string
 	Reference string
 	MediaType string
+	Detail    string
 }
 
 // ToolCall is one complete assistant tool request.
@@ -193,19 +194,20 @@ type ResponseFormat struct {
 // NormalizedRequest is the provider-neutral input to every adapter.
 // It deliberately contains no provider credential, endpoint, tenant ID, or project ID.
 type NormalizedRequest struct {
-	RequestID       string
-	LogicalModel    string
-	Messages        []Message
-	Stream          bool
-	Temperature     *float64
-	TopP            *float64
-	MaxOutputTokens *int64
-	Stop            []string
-	Tools           []ToolDefinition
-	ToolChoice      *ToolChoice
-	ResponseFormat  *ResponseFormat
-	PolicyLabels    []string
-	ProviderOptions json.RawMessage
+	RequestID        string
+	LogicalModel     string
+	EndUserReference string
+	Messages         []Message
+	Stream           bool
+	Temperature      *float64
+	TopP             *float64
+	MaxOutputTokens  *int64
+	Stop             []string
+	Tools            []ToolDefinition
+	ToolChoice       *ToolChoice
+	ResponseFormat   *ResponseFormat
+	PolicyLabels     []string
+	ProviderOptions  json.RawMessage
 }
 
 // NormalizedChoice is one complete provider-neutral response choice.

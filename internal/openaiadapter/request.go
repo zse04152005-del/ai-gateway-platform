@@ -16,6 +16,7 @@ const maximumUpstreamRequestBytes = 1 << 20
 
 type upstreamRequest struct {
 	Model               string            `json:"model"`
+	User                string            `json:"user,omitempty"`
 	Messages            []upstreamMessage `json:"messages"`
 	Stream              bool              `json:"stream,omitempty"`
 	StreamOptions       *streamOptions    `json:"stream_options,omitempty"`
@@ -47,7 +48,8 @@ type upstreamContentPart struct {
 }
 
 type upstreamImageValue struct {
-	URL string `json:"url"`
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type upstreamTool struct {
@@ -101,7 +103,7 @@ func (openAI *openAIAdapter) BuildRequest(ctx context.Context, input adapter.Nor
 		return nil, err
 	}
 	requestBody := upstreamRequest{
-		Model: openAI.physicalModel, Messages: messages, Stream: input.Stream,
+		Model: openAI.physicalModel, User: input.EndUserReference, Messages: messages, Stream: input.Stream,
 		Temperature: input.Temperature, TopP: input.TopP, MaxCompletionTokens: input.MaxOutputTokens,
 		Stop: append([]string(nil), input.Stop...), Tools: buildTools(input.Tools),
 		ToolChoice: buildToolChoice(input.ToolChoice), ResponseFormat: buildResponseFormat(input.ResponseFormat),
@@ -197,7 +199,9 @@ func buildContent(parts []adapter.ContentPart) (any, error) {
 		case adapter.ContentText:
 			content[index] = upstreamContentPart{Type: "text", Text: part.Text}
 		case adapter.ContentImageReference:
-			content[index] = upstreamContentPart{Type: "image_url", ImageURL: &upstreamImageValue{URL: part.Reference}}
+			content[index] = upstreamContentPart{
+				Type: "image_url", ImageURL: &upstreamImageValue{URL: part.Reference, Detail: part.Detail},
+			}
 		case adapter.ContentAudioReference:
 			return nil, unsupported("messages.parts.audio_reference", "audio input mapping is not implemented")
 		default:

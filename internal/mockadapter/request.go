@@ -22,6 +22,7 @@ type mockOptions struct {
 
 type upstreamRequest struct {
 	Model           string            `json:"model"`
+	User            string            `json:"user,omitempty"`
 	Messages        []upstreamMessage `json:"messages"`
 	Stream          bool              `json:"stream,omitempty"`
 	Temperature     *float64          `json:"temperature,omitempty"`
@@ -54,6 +55,7 @@ type upstreamMediaValue struct {
 	URL       string `json:"url,omitempty"`
 	Data      string `json:"data,omitempty"`
 	MediaType string `json:"media_type,omitempty"`
+	Detail    string `json:"detail,omitempty"`
 }
 
 type upstreamTool struct {
@@ -108,7 +110,7 @@ func (mock *mockAdapter) BuildRequest(ctx context.Context, input adapter.Normali
 		return nil, err
 	}
 	requestBody := upstreamRequest{
-		Model: mock.physicalModel, Messages: messages, Stream: input.Stream,
+		Model: mock.physicalModel, User: input.EndUserReference, Messages: messages, Stream: input.Stream,
 		Temperature: input.Temperature, TopP: input.TopP, MaxOutputTokens: input.MaxOutputTokens,
 		Stop: append([]string(nil), input.Stop...), Tools: buildTools(input.Tools),
 		ToolChoice: buildToolChoice(input.ToolChoice), ResponseFormat: buildResponseFormat(input.ResponseFormat),
@@ -221,7 +223,9 @@ func buildContent(parts []adapter.ContentPart) (any, error) {
 			content[index] = upstreamContentPart{Type: "text", Text: part.Text}
 		case adapter.ContentImageReference:
 			content[index] = upstreamContentPart{
-				Type: "image_url", ImageURL: &upstreamMediaValue{URL: part.Reference, MediaType: part.MediaType},
+				Type: "image_url", ImageURL: &upstreamMediaValue{
+					URL: part.Reference, MediaType: part.MediaType, Detail: part.Detail,
+				},
 			}
 		case adapter.ContentAudioReference:
 			content[index] = upstreamContentPart{

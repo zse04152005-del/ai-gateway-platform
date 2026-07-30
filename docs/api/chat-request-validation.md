@@ -59,7 +59,7 @@ an internal decoder error.
 
 ## Stage boundary
 
-The parser produces an internal validated transport value. P06-T02 converts
+The parser produces an internal validated transport value. P06-T02 now converts
 that value into `adapter.NormalizedRequest`, adds the trusted correlation and
 idempotency facts, and verifies normalized invariants before any deployment or
-provider is selected.
+provider is selected. See [Chat request normalization](chat-request-normalization.md).

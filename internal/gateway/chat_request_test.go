@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
 )
 
 func TestParseChatCompletionRequestAcceptsSupportedProtocol(t *testing.T) {
@@ -123,6 +124,8 @@ func TestParseChatCompletionRequestRejectsUnsafeInputs(t *testing.T) {
 		{name: "temperature type", body: validPrefix + `,"temperature":"hot"}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "INVALID_PARAMETER_TYPE", wantParam: "temperature"},
 		{name: "temperature range", body: validPrefix + `,"temperature":3}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "INVALID_PARAMETER", wantParam: "temperature"},
 		{name: "top p range", body: validPrefix + `,"top_p":0}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "INVALID_PARAMETER", wantParam: "top_p"},
+		{name: "unsafe user whitespace", body: validPrefix + `,"user":" padded "}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "INVALID_PARAMETER", wantParam: "user"},
+		{name: "unsafe user control", body: validPrefix + `,"user":"line\nbreak"}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "INVALID_PARAMETER", wantParam: "user"},
 		{name: "fractional max", body: validPrefix + `,"max_completion_tokens":1.5}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "INVALID_PARAMETER_TYPE", wantParam: "max_completion_tokens"},
 		{name: "conflicting max", body: validPrefix + `,"max_tokens":2,"max_completion_tokens":3}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "CONFLICTING_PARAMETERS", wantParam: "max_completion_tokens"},
 		{name: "duplicate stop", body: validPrefix + `,"stop":["END","END"]}`, contentType: "application/json", wantStatus: http.StatusBadRequest, wantCode: "INVALID_PARAMETER", wantParam: "stop"},
@@ -175,6 +178,11 @@ func TestChatCompletionsHandlerIsProtectedAndFailsExplicitlyUntilExecutionExists
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
+	correlationManager, err := correlation.New(correlation.Options{})
+	if err != nil {
+		t.Fatalf("correlation.New() error = %v", err)
+	}
+	handler = correlationManager.Middleware(handler)
 
 	tests := []struct {
 		name       string
