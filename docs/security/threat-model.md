@@ -34,7 +34,7 @@
 | T-02 | Tampering | 修改路由、价格或预算逃避治理 | 高 | 管理 RBAC、版本发布、审计、乐观锁 | 越权与并发更新测试 |
 | T-03 | Repudiation | 管理员否认配置/导出操作 | 高 | 追加审计、actor、reason、before/after、traceId | 审计完整性检查 |
 | T-04 | Information Disclosure | Key/Prompt 进入日志、Trace、错误 | 严重 | 默认不存正文、统一脱敏、日志测试 | 全仓/日志敏感模式扫描 |
-| T-05 | Information Disclosure | 跨租户读模型、用量或缓存 | 严重 | 数据库 Principal、删除客户端身份 Header、Repository 强制过滤、有界缓存与显式失效 | 认证伪造 Header、缓存失效与跨租户测试矩阵 |
+| T-05 | Information Disclosure | 跨租户读模型、用量或缓存 | 严重 | 可信 Principal、删除客户端身份 Header、Repository 复合作用域谓词、数据库复合外键、前缀绑定的有界深拷贝缓存与显式失效 | 两租户真实 PostgreSQL 直接 ID/列表/缓存/Key/模型/Provider Secret 回归矩阵 |
 | T-06 | Elevation | 数据面 Key 调用管理 API | 严重 | 管理面独立身份与受众、路由隔离 | Token audience/role 测试 |
 | T-07 | SSRF | 管理员配置恶意 Provider 地址 | 严重 | 域名白名单、DNS/IP 校验、禁重定向、出站策略 | 回环/元数据/DNS 重绑定测试 |
 | T-08 | DoS | 超大正文、Header、SSE Chunk 或慢客户端 | 高 | 大小限制、有界缓冲、写超时、连接/并发限制 | 资源压力与慢客户端测试 |
@@ -54,6 +54,8 @@
 - tenantId/projectId 从认证上下文得出，不信任请求参数。
 - 缺失、格式错误、未知、错误 Secret、吊销、过期和作用域禁用对外使用同一 401，不提供 Key 枚举 Oracle。
 - 认证正缓存只存摘要与作用域，支持按前缀失效；绝对过期/轮换宽限每次重新判断，TTL 是主动失效故障时的明确残余风险上界。
+- 缓存写入键必须与数据库 Record 的全局唯一安全前缀一致，输入、输出和 Principal 深拷贝可变授权策略；失配记录拒绝缓存。
+- 直接 ID 与生命周期查询必须使用 Tenant/Project/ID 复合 Locator；跨作用域和真实不存在使用同一错误族，不能形成对象枚举 Oracle。
 - 导出、审计和明细请求使用更细权限。
 
 ### 5.2 密钥

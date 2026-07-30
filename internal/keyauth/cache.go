@@ -64,7 +64,10 @@ func (cache *MemoryCache) Get(prefix string) (Record, bool) {
 
 // Set stores a deep copy and evicts the oldest entry at capacity.
 func (cache *MemoryCache) Set(prefix string, record Record) {
-	if cache == nil || cache.ttl == 0 {
+	// The public prefix is the only cache lookup key. Refuse malformed writes so
+	// an internal caller cannot place one credential's scoped record under a
+	// different credential prefix.
+	if cache == nil || cache.ttl == 0 || prefix == "" || record.Prefix != prefix {
 		return
 	}
 	cache.mutex.Lock()

@@ -25,6 +25,7 @@
 - 新增模型目录：分离 Provider、租户 LogicalModel 与物理 Deployment，以严格 Capability/Region/Data Retention 契约和数据库触发器阻止不兼容绑定及后续配置漂移。
 - 新增项目模型授权与 `GET /v1/models`：计算项目白名单、Key 三态收窄和 active 目录交集，并修复显式空 Key 白名单被折叠为继承策略的问题。
 - 新增 Provider Secret Reference：本地开发使用版本化 AES-256-GCM 认证加密，生产预留 Vault/KMS Resolver，数据库复合外键阻止跨 Provider 凭据复用。
+- 新增两租户真实 PostgreSQL 隔离回归矩阵，覆盖直接 ID、列表、认证缓存、Virtual Key、模型查询、Provider Secret 与错误枚举防护。
 
 ### Changed
 
@@ -37,3 +38,4 @@
 - 完整 Virtual Key 不进入领域 Record、数据库、查询 API、错误或日志；非开发环境缺少独立摘要密钥时控制面拒绝启动。
 - Gateway 删除客户端伪造的租户/项目/Key 身份 Header；所有凭据失败统一 401，数据库或 Keyring 不完整时 fail closed 为 503。
 - Provider Secret 明文、内部 Locator 与 Envelope 字段不进入 Metadata/API/日志/错误；生产环境禁止 development-only 本地 Envelope Key。
+- 认证缓存写入强制绑定 Record 安全前缀并深拷贝作用域策略；混合 Tenant/Project、跨 Provider Reference 和伪造身份 Header 均 fail closed。

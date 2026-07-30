@@ -9,6 +9,11 @@
 - 所有资源查询强制租户边界。
 - 管理配置、预算和审计操作不得由模型输出直接决定。
 
+已实现安全基线：
+
+- [威胁模型](threat-model.md)
+- [多租户隔离边界与回归矩阵](tenant-isolation.md)
+
 ## 结构化日志安全基线
 
 - 所有进程使用一行一条的 JSON 日志，固定包含 `service`、`version`、`level`、`requestId`、`traceId`、`tenantId`、`projectId`。

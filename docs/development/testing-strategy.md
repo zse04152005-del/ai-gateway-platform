@@ -39,3 +39,7 @@
 ## 4. CI 一致性
 
 常规源码和带 `integration` build tag 的模板分别执行 lint。CI 与 `make test-integration` 强制使用 race detector；PowerShell 在 Windows 无 CGO 环境自动省略 `-race`，其余 build tag、超时和包范围一致。任何 Skip 必须输出明确的平台/外部条件；不允许把失败改成 Skip。
+
+## 5. 多租户隔离回归
+
+隔离测试不能只验证正常租户查询。每一种 Tenant/Project 资源至少覆盖：正确作用域、两个方向的混合作用域、随机不存在 ID、直接 ID、列表/分页、缓存、批量查询和公开错误一致性。P04 基线见 [`docs/security/tenant-isolation.md`](../security/tenant-isolation.md)，使用两个完整租户链路和真实 PostgreSQL，由 CI 的 `migration-integration` Job 强制执行。

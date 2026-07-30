@@ -24,3 +24,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `model_catalog_schema_test.go` 用真实 PostgreSQL 验证逻辑/物理模型分离、租户唯一性、严格 Capability/Region/Endpoint 约束、绑定兼容性触发器、配置漂移防护和无凭据列。
 - `model_list_test.go` 贯通真实 Key 签发、认证、项目/Key 白名单三态与 `/v1/models`，验证 active Provider/Deployment 过滤、跨租户复合外键、伪造 Header 和响应不泄漏物理目录。
 - `provider_secret_test.go` 用真实 PostgreSQL 验证 AES-GCM Envelope 明文不落库、同 Provider 绑定、跨 Provider 拒绝、Vault Locator 互斥材料、禁用解析和无明文字段。
+- `tenant_isolation_test.go` 建立两个完整租户链路，验证 Key 直接 ID/轮换/吊销、混合 Tenant/Project 列表、缓存深拷贝与前缀绑定、伪造身份 Header、`/v1/models`、Provider Secret/Deployment 复合引用和统一 401 均不能跨边界；CI PostgreSQL Job 强制执行。
