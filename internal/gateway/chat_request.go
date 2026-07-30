@@ -11,11 +11,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
 const (
@@ -104,7 +108,7 @@ func (problem *requestProblem) publicError() *apierror.Error {
 	}, nil)
 }
 
-func newChatCompletionsHandler() http.Handler {
+func newChatCompletionsHandler(routeSelector RouteSelector) http.Handler {
 	methodError := newRequestProblem(
 		http.StatusMethodNotAllowed,
 		"METHOD_NOT_ALLOWED",
@@ -127,12 +131,53 @@ func newChatCompletionsHandler() http.Handler {
 			apierror.WriteHTTP(writer, problem.publicError(), requestID, "gateway_error")
 			return
 		}
-		if _, err := normalizeChatCompletionRequest(parsed, requestID, request.Header.Values(idempotencyKeyHeader)); err != nil {
+		normalized, err := normalizeChatCompletionRequest(parsed, requestID, request.Header.Values(idempotencyKeyHeader))
+		if err != nil {
+			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
+			return
+		}
+		if err := selectInitialRoute(request, normalized, routeSelector); err != nil {
 			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 			return
 		}
 		apierror.WriteHTTP(writer, notImplemented, requestID, "gateway_error")
 	})
+}
+
+func selectInitialRoute(request *http.Request, normalized normalizedChatRequest, routeSelector RouteSelector) error {
+	if routeSelector == nil {
+		return routeUnavailable(errors.New("route selector is not configured"))
+	}
+	principal, ok := keyauth.PrincipalFromContext(request.Context())
+	if !ok {
+		return routeUnavailable(errors.New("trusted authentication principal is missing"))
+	}
+	_, err := routeSelector.Select(request.Context(), routing.SelectionRequest{
+		Access: catalog.Access{
+			TenantID: principal.TenantID, ProjectID: principal.ProjectID,
+			KeyAllowedModels: principal.AllowedModels,
+		},
+		Request: normalized.ProviderRequest.Clone(),
+	})
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, routing.ErrNoCandidate) {
+		return apierror.MustNew(apierror.Definition{
+			Status: http.StatusServiceUnavailable, Code: "MODEL_UNAVAILABLE",
+			Message: "No compatible healthy deployment is available", Type: "gateway_error",
+			Param: "model", Retryable: true, RetryAfter: time.Second,
+		}, err)
+	}
+	return routeUnavailable(err)
+}
+
+func routeUnavailable(cause error) *apierror.Error {
+	return apierror.MustNew(apierror.Definition{
+		Status: http.StatusServiceUnavailable, Code: "ROUTING_UNAVAILABLE",
+		Message: "Routing is temporarily unavailable", Type: "gateway_error",
+		Retryable: true, RetryAfter: time.Second,
+	}, cause)
 }
 
 func parseChatCompletionRequest(writer http.ResponseWriter, request *http.Request) (parsedChatRequest, *requestProblem) {

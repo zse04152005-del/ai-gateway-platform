@@ -12,6 +12,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
 const (
@@ -147,6 +148,12 @@ func TestNewHandlerRejectsNilDependencies(t *testing.T) {
 	if _, err := NewHandler(&stubAuthenticator{}, nil); err == nil {
 		t.Fatal("NewHandler(nil catalog) error = nil")
 	}
+	if _, err := NewHandler(&stubAuthenticator{}, &stubModelCatalog{}, nil); err == nil {
+		t.Fatal("NewHandler(nil route selector) error = nil")
+	}
+	if _, err := NewHandler(&stubAuthenticator{}, &stubModelCatalog{}, &stubRouteSelector{}, &stubRouteSelector{}); err == nil {
+		t.Fatal("NewHandler(multiple route selectors) error = nil")
+	}
 }
 
 type stubAuthenticator struct {
@@ -170,6 +177,19 @@ type stubModelCatalog struct {
 	err    error
 	access catalog.Access
 	calls  int
+}
+
+type stubRouteSelector struct {
+	selection routing.Selection
+	err       error
+	request   routing.SelectionRequest
+	calls     int
+}
+
+func (stub *stubRouteSelector) Select(_ context.Context, request routing.SelectionRequest) (routing.Selection, error) {
+	stub.calls++
+	stub.request = request
+	return stub.selection, stub.err
 }
 
 func (stub *stubModelCatalog) ListAvailable(_ context.Context, access catalog.Access) ([]catalog.AvailableModel, error) {

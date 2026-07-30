@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
 func TestParseChatCompletionRequestAcceptsSupportedProtocol(t *testing.T) {
@@ -174,7 +176,8 @@ func TestParseChatCompletionRequestEnforcesBodyLimitForKnownAndStreamingLengths(
 func TestChatCompletionsHandlerIsProtectedAndFailsExplicitlyUntilExecutionExists(t *testing.T) {
 	t.Parallel()
 	authenticator := &stubAuthenticator{principal: validGatewayPrincipal()}
-	handler, err := NewHandler(authenticator, &stubModelCatalog{})
+	routeSelector := &stubRouteSelector{}
+	handler, err := NewHandler(authenticator, &stubModelCatalog{}, routeSelector)
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
@@ -219,6 +222,65 @@ func TestChatCompletionsHandlerIsProtectedAndFailsExplicitlyUntilExecutionExists
 	}
 	if authenticator.calls != len(tests) {
 		t.Fatalf("authenticator calls = %d, want %d", authenticator.calls, len(tests))
+	}
+	if routeSelector.calls != 1 || routeSelector.request.Access.TenantID != gatewayTenantID || routeSelector.request.Access.ProjectID != gatewayProjectID || routeSelector.request.Request.LogicalModel != "general-chat" {
+		t.Fatalf("route calls/request = %d/%+v", routeSelector.calls, routeSelector.request)
+	}
+}
+
+func TestChatCompletionsHandlerMapsRouteFailuresWithoutLeakingCause(t *testing.T) {
+	t.Parallel()
+	privateMarker := "postgres-private-routing-host"
+	tests := []struct {
+		name       string
+		selector   *stubRouteSelector
+		configured bool
+		wantCode   string
+		wantParam  string
+	}{
+		{name: "no candidate", selector: &stubRouteSelector{err: routing.ErrNoCandidate}, configured: true, wantCode: "MODEL_UNAVAILABLE", wantParam: "model"},
+		{name: "source unavailable", selector: &stubRouteSelector{err: errors.New(privateMarker)}, configured: true, wantCode: "ROUTING_UNAVAILABLE"},
+		{name: "selector not configured", wantCode: "ROUTING_UNAVAILABLE"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			authenticator := &stubAuthenticator{principal: validGatewayPrincipal()}
+			var handler http.Handler
+			var err error
+			if test.configured {
+				handler, err = NewHandler(authenticator, &stubModelCatalog{}, test.selector)
+			} else {
+				handler, err = NewHandler(authenticator, &stubModelCatalog{})
+			}
+			if err != nil {
+				t.Fatalf("NewHandler() error = %v", err)
+			}
+			manager, err := correlation.New(correlation.Options{})
+			if err != nil {
+				t.Fatalf("correlation.New() error = %v", err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(
+				`{"model":"general-chat","messages":[{"role":"user","content":"hello"}]}`,
+			))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			manager.Middleware(handler).ServeHTTP(response, request)
+			if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" {
+				t.Fatalf("status/Retry-After = %d/%q; body = %s", response.Code, response.Header().Get("Retry-After"), response.Body)
+			}
+			var envelope apierror.Envelope
+			if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+				t.Fatalf("decode envelope: %v", err)
+			}
+			gotParam := ""
+			if envelope.Error.Param != nil {
+				gotParam = *envelope.Error.Param
+			}
+			if envelope.Error.Code != test.wantCode || gotParam != test.wantParam || strings.Contains(response.Body.String(), privateMarker) {
+				t.Fatalf("route envelope = %+v; body = %s", envelope, response.Body)
+			}
+		})
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
 var version = "dev"
@@ -105,7 +106,11 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create model catalog store: %w", err)
 	}
-	applicationHandler, err := gateway.NewHandler(authenticator, modelCatalog)
+	routeSelector, err := routing.NewSelector(modelCatalog, routing.ActiveCatalogHealth{})
+	if err != nil {
+		return fmt.Errorf("create route selector: %w", err)
+	}
+	applicationHandler, err := gateway.NewHandler(authenticator, modelCatalog, routeSelector)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)
 	}
