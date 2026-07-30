@@ -26,6 +26,7 @@
 - 新增项目模型授权与 `GET /v1/models`：计算项目白名单、Key 三态收窄和 active 目录交集，并修复显式空 Key 白名单被折叠为继承策略的问题。
 - 新增 Provider Secret Reference：本地开发使用版本化 AES-256-GCM 认证加密，生产预留 Vault/KMS Resolver，数据库复合外键阻止跨 Provider 凭据复用。
 - 新增两租户真实 PostgreSQL 隔离回归矩阵，覆盖直接 ID、列表、认证缓存、Virtual Key、模型查询、Provider Secret 与错误枚举防护。
+- 新增本地 `mock-provider` 进程与确定性 OpenAI-compatible 场景协议，覆盖普通响应、SSE、固定/缓存 Usage、延迟、429、503、截断连接、错误 Chunk 和工具调用。
 
 ### Changed
 
@@ -39,3 +40,4 @@
 - Gateway 删除客户端伪造的租户/项目/Key 身份 Header；所有凭据失败统一 401，数据库或 Keyring 不完整时 fail closed 为 503。
 - Provider Secret 明文、内部 Locator 与 Envelope 字段不进入 Metadata/API/日志/错误；生产环境禁止 development-only 本地 Envelope Key。
 - 认证缓存写入强制绑定 Record 安全前缀并深拷贝作用域策略；混合 Tenant/Project、跨 Provider Reference 和伪造身份 Header 均 fail closed。
+- Mock Provider 只允许 development/test 与 Loopback 监听，使用不读取基础服务或真实凭据的最小配置，生产环境在监听前 fail closed。

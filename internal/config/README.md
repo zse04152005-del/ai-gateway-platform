@@ -4,6 +4,10 @@
 
 本地 `.env` 由启动工具加载，应用本身不隐式搜索文件，避免生产环境意外读取工作目录中的秘密。
 
+## Mock Provider 最小配置
+
+`config.LoadMockProvider` 只读取环境、日志、`MOCK_PROVIDER_HTTP_ADDR` 和共享 HTTP 超时，不要求任何数据库、缓存、消息、分析或遥测地址。它只允许 development/test，并强制 Loopback 监听；staging/production 或公网地址会在打开 Listener 前 fail closed。
+
 ## 本地 Provider 信封加密
 
 - `LOCAL_ENVELOPE_KEY`：仅 development 可用的 32 字节 AES-256-GCM Key（64 位十六进制）；生产环境配置该值会 fail closed。

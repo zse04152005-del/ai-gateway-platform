@@ -57,19 +57,42 @@ func TestProcessLifecycle(t *testing.T) {
 		}, "http://"+address+"/admin/v1/status", `"service":"control-plane"`)
 	})
 
+	t.Run("mock-provider", func(t *testing.T) {
+		address := freeAddress(t)
+		testHTTPProcess(t, root, binaries["mock-provider"], "mock-provider", map[string]string{
+			"MOCK_PROVIDER_HTTP_ADDR": address,
+		}, "http://"+address+"/health/ready", `"status":"ok"`)
+	})
+
 	t.Run("metering-worker", func(t *testing.T) {
 		testMeteringWorkerProcess(t, root, binaries["metering-worker"])
 	})
 
 	t.Run("configuration-errors", func(t *testing.T) {
-		tests := map[string]string{
-			"gateway":         "GATEWAY_PROCESS_FAILED",
-			"control-plane":   "CONTROL_PLANE_PROCESS_FAILED",
-			"metering-worker": "METERING_WORKER_PROCESS_FAILED",
+		tests := map[string]struct {
+			errorCode string
+			overrides map[string]string
+		}{
+			"gateway": {
+				errorCode: "GATEWAY_PROCESS_FAILED",
+				overrides: map[string]string{"DATABASE_URL": "http://10.9.8.7/private-config-value"},
+			},
+			"control-plane": {
+				errorCode: "CONTROL_PLANE_PROCESS_FAILED",
+				overrides: map[string]string{"DATABASE_URL": "http://10.9.8.7/private-config-value"},
+			},
+			"metering-worker": {
+				errorCode: "METERING_WORKER_PROCESS_FAILED",
+				overrides: map[string]string{"DATABASE_URL": "http://10.9.8.7/private-config-value"},
+			},
+			"mock-provider": {
+				errorCode: "MOCK_PROVIDER_PROCESS_FAILED",
+				overrides: map[string]string{"APP_ENV": "production"},
+			},
 		}
-		for service, errorCode := range tests {
+		for service, test := range tests {
 			t.Run(service, func(t *testing.T) {
-				testConfigurationError(t, root, binaries[service], service, errorCode)
+				testConfigurationError(t, root, binaries[service], service, test.errorCode, test.overrides)
 			})
 		}
 	})
@@ -129,13 +152,15 @@ func testMeteringWorkerProcess(t *testing.T, root, binary string) {
 	assertJSONLogs(t, process.stderr.String(), "metering-worker", listener.Addr().String(), "postgres://")
 }
 
-func testConfigurationError(t *testing.T, root, binary, service, errorCode string) {
+func testConfigurationError(
+	t *testing.T,
+	root, binary, service, errorCode string,
+	overrides map[string]string,
+) {
 	t.Helper()
 	command := exec.Command(binary)
 	command.Dir = root
-	command.Env = processEnvironment(map[string]string{
-		"DATABASE_URL": "http://10.9.8.7/private-config-value",
-	})
+	command.Env = processEnvironment(overrides)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	command.Stdout = &bytes.Buffer{}
@@ -153,8 +178,8 @@ func testConfigurationError(t *testing.T, root, binary, service, errorCode strin
 func buildProcessBinaries(t *testing.T, root string) map[string]string {
 	t.Helper()
 	directory := t.TempDir()
-	binaries := make(map[string]string, 3)
-	for _, name := range []string{"gateway", "control-plane", "metering-worker"} {
+	binaries := make(map[string]string, 4)
+	for _, name := range []string{"gateway", "control-plane", "metering-worker", "mock-provider"} {
 		path := filepath.Join(directory, name)
 		// The executable path is under t.TempDir and name comes only from the fixed literal slice above.
 		command := exec.Command("go", "build", "-buildvcs=false", "-o", path, "./cmd/"+name) //nolint:gosec
@@ -300,6 +325,7 @@ func processEnvironment(overrides map[string]string) []string {
 		"DATABASE_URL":                 "postgres://127.0.0.1:5432/process_test?sslmode=disable",
 		"GATEWAY_HTTP_ADDR":            "127.0.0.1:18080",
 		"CONTROL_PLANE_HTTP_ADDR":      "127.0.0.1:18081",
+		"MOCK_PROVIDER_HTTP_ADDR":      "127.0.0.1:18082",
 		"METRICS_ADDR":                 "127.0.0.1:19091",
 		"SHUTDOWN_TIMEOUT":             "2s",
 		"HTTP_READ_HEADER_TIMEOUT":     "2s",

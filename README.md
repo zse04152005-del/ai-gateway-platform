@@ -2,7 +2,7 @@
 
 企业级 AI 网关与模型成本治理平台项目目录。
 
-当前处于：**应用骨架与横切能力阶段（P03）**。P00～P02 已完成；Go、Docker/WSL2、7 个本地基础服务与远程 CI 已真实验证。
+当前处于：**Mock Provider 与适配器一致性框架阶段（P05）**。P00～P04 已完成；身份、模型目录、Provider Secret 和两租户隔离矩阵均通过真实 PostgreSQL 与远程 CI。
 
 ## 项目核心特色
 
@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P03-T05：实现统一结构化日志（进行中）`
+`P05-T01：实现 Mock Provider 服务（进行中）`
 
-P03-T01～T04 三进程骨架与不可变热配置已完成并通过远程 Linux race CI；当前实现统一字段和默认脱敏的 JSON 结构化日志。
+P04 已完成并有独立阶段报告；当前实现不依赖外网、场景可精确触发的 Provider 协议模拟器，为后续 Normalized 类型、Adapter 和一致性套件提供确定性上游。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
@@ -103,5 +103,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action metering-work
 ```
 
 worker 当前验证 broker bootstrap 连接与优雅停止；Kafka 消费协议、用量事件和账本在 P09/P10 实现。
+
+启动本地 Mock Provider（不需要数据库或外网）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mock-provider
+Invoke-RestMethod http://127.0.0.1:18082/health/ready
+```
+
+场景 ID、SSE、Usage、Tool Call、错误和断流用法见 [`docs/development/mock-provider.md`](./docs/development/mock-provider.md)。该进程只允许 development/test 和 Loopback 地址，不能作为生产 Provider。
 
 `.env` 只用于本地并被 Git 忽略，禁止写入真实生产密钥。

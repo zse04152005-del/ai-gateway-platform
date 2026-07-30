@@ -1,4 +1,4 @@
-.PHONY: help bootstrap mod-verify fmt fmt-check lint vuln ci-lint test test-integration build migrate-validate migrate-up migrate-down migrate-version compose-up compose-down compose-logs run-gateway run-control-plane run-metering check
+.PHONY: help bootstrap mod-verify fmt fmt-check lint vuln ci-lint test test-integration build migrate-validate migrate-up migrate-down migrate-version compose-up compose-down compose-logs run-gateway run-control-plane run-metering run-mock-provider check
 
 ifneq (,$(wildcard .env))
 include .env
@@ -70,5 +70,8 @@ run-control-plane:
 
 run-metering:
 	go run ./cmd/metering-worker
+
+run-mock-provider:
+	go run ./cmd/mock-provider
 
 check: mod-verify fmt-check lint test build vuln migrate-validate ci-lint
