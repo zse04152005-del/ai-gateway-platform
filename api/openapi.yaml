@@ -44,6 +44,10 @@ paths:
       tags: [Models]
       operationId: listModels
       summary: List logical models available to the authenticated virtual key
+      description: >-
+        Returns the intersection of the active project allowlist, the virtual
+        key narrowing policy, and logical models backed by at least one active
+        provider deployment. Physical deployment details are never returned.
       responses:
         '200':
           description: Available logical models
@@ -53,8 +57,10 @@ paths:
                 $ref: '#/components/schemas/ModelList'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/GatewayUnavailable'
   /v1/chat/completions:
     post:
       tags: [Chat]
@@ -540,6 +546,7 @@ components:
           type: boolean
     ModelList:
       type: object
+      additionalProperties: false
       required: [object, data]
       properties:
         object:
@@ -548,6 +555,7 @@ components:
           type: array
           items:
             type: object
+            additionalProperties: false
             required: [id, object, owned_by]
             properties:
               id:
@@ -556,10 +564,13 @@ components:
                 const: model
               owned_by:
                 type: string
+                const: ai-gateway
               capabilities:
                 type: array
+                uniqueItems: true
                 items:
                   type: string
+                  enum: [chat, stream, tools, parallel_tools, structured_output, vision, audio_input, audio_output, embeddings]
     CreateVirtualKeyRequest:
       type: object
       additionalProperties: false
@@ -765,6 +776,12 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     Conflict:
       description: The requested lifecycle transition conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    MethodNotAllowed:
+      description: The HTTP method is not allowed for this resource
       content:
         application/json:
           schema:

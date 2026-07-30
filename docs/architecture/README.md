@@ -10,3 +10,4 @@
 - [`virtual-key-lifecycle.md`](virtual-key-lifecycle.md)：一次性签发、事务轮换、幂等吊销、派生过期和摘要密钥边界。
 - [`virtual-key-authentication.md`](virtual-key-authentication.md)：数据面 Bearer 验证、可信 Principal、统一失败语义和缓存失效边界。
 - [`model-catalog-schema.md`](model-catalog-schema.md)：Provider/LogicalModel/Deployment 分层、能力/区域契约与绑定漂移防护。
+- [`model-authorization-and-listing.md`](model-authorization-and-listing.md)：项目/Key 白名单交集、目录可用性与安全 `/v1/models`。

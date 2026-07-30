@@ -11,3 +11,5 @@
 - `Satisfies` 用于后续路由候选过滤，不能替代 Provider 健康、预算、白名单或 SSRF 检查。
 - Endpoint 在本模块只做结构校验；DNS/IP、重定向和出站目的地安全由 P12-T06 的安全层负责。
 - Provider 凭据引用由 P04-T07 独立实现，避免把明文或可恢复 Secret 混入目录记录。
+
+`PostgresStore.ListAvailable` 从可信 Tenant/Project 作用域出发，计算项目授权、Key 收窄规则和目录 active 状态的交集。Key `allowed_models = nil` 继承项目授权，非 nil 空 slice 明确拒绝全部；查询不会返回 Provider、Deployment 或 Endpoint。

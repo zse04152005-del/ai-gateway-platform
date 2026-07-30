@@ -24,6 +24,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action gateway
 
 正缓存默认 TTL 为 2 秒、最大允许 30 秒；`0s` 可完全禁用。吊销/状态变更消费者应按安全前缀调用显式失效；绝对过期和轮换宽限每次按当前时钟重新判断，不会被缓存 TTL 延长。跨进程主动失效总线接入前，运维必须把 TTL 当作吊销最大陈旧窗口。
 
+## 模型列表
+
+`GET /v1/models` 在认证后计算 Project 授权、Key 白名单和目录 active 状态的交集。Key 白名单为 `NULL` 时继承项目、空数组时拒绝全部、非空时只能收窄；成功响应不暴露 Provider/Deployment/Endpoint。目录查询失败返回可重试 503 `MODEL_CATALOG_UNAVAILABLE`。
+
 ## 健康探针
 
 | 路径 | 成功状态 | 语义 |

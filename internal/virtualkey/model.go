@@ -241,7 +241,8 @@ func cloneStrings(values *[]string) *[]string {
 	if values == nil {
 		return nil
 	}
-	copyOfValues := append([]string(nil), (*values)...)
+	copyOfValues := make([]string, len(*values))
+	copy(copyOfValues, *values)
 	return &copyOfValues
 }
 

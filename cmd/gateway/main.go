@@ -16,6 +16,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/gateway"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
@@ -100,7 +101,11 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create virtual credential authenticator: %w", err)
 	}
-	applicationHandler, err := gateway.NewHandler(authenticator)
+	modelCatalog, err := catalog.NewPostgresStore(database)
+	if err != nil {
+		return fmt.Errorf("create model catalog store: %w", err)
+	}
+	applicationHandler, err := gateway.NewHandler(authenticator, modelCatalog)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)
 	}

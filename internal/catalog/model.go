@@ -145,6 +145,20 @@ type Binding struct {
 	UpdatedBy      string
 }
 
+// Access identifies the trusted tenant/project scope and optional per-key narrowing filter.
+// A nil KeyAllowedModels inherits the project allowlist; an empty slice denies every model.
+type Access struct {
+	TenantID         string
+	ProjectID        string
+	KeyAllowedModels *[]string
+}
+
+// AvailableModel is the safe logical-model projection returned to data-plane clients.
+type AvailableModel struct {
+	Name         string
+	Capabilities []string
+}
+
 // ValidationError identifies one safe invalid domain field.
 type ValidationError struct {
 	Field  string
@@ -331,6 +345,30 @@ func (capabilities CapabilitySet) Satisfies(requirements CapabilityRequirements)
 		return false
 	}
 	return true
+}
+
+// Names returns a deterministic list of client-visible boolean capabilities.
+func (requirements CapabilityRequirements) Names() []string {
+	names := make([]string, 0, 9)
+	for _, candidate := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "chat", enabled: requirements.Chat},
+		{name: "stream", enabled: requirements.Stream},
+		{name: "tools", enabled: requirements.Tools},
+		{name: "parallel_tools", enabled: requirements.ParallelTools},
+		{name: "structured_output", enabled: requirements.StructuredOutput},
+		{name: "vision", enabled: requirements.Vision},
+		{name: "audio_input", enabled: requirements.AudioInput},
+		{name: "audio_output", enabled: requirements.AudioOutput},
+		{name: "embeddings", enabled: requirements.Embeddings},
+	} {
+		if candidate.enabled {
+			names = append(names, candidate.name)
+		}
+	}
+	return names
 }
 
 // Satisfies reports whether a deployment honors capability and region requirements.

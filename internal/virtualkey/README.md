@@ -6,6 +6,7 @@
 - `HMACDigester` 使用版本化 32 字节根密钥计算 `HMAC-SHA-256(prefix || 0x00 || secret)`。
 - `PostgresStore` 的每个查询都带 `tenant_id + project_id + id`；轮换和吊销使用行锁与乐观版本条件。
 - `Record.SecretHash` 显式禁止 JSON 序列化；`Metadata` 不含摘要，`IssuedCredential` 仅用于创建/轮换返回边界。
+- `allowed_models` 保留三态：`NULL` 继承项目、非 nil 空 slice 拒绝全部、非空 slice 收窄；深拷贝和 PostgreSQL 往返不得把空数组折叠成 NULL。
 
 完整凭据格式为安全前缀、点号和 32 字节 base64url Secret。前缀可进入审计和支持流程，完整凭据与 Secret 不得进入日志、错误、指标标签、Trace、数据库或消息事件。
 

@@ -22,3 +22,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `virtual_key_lifecycle_test.go` 使用真实 PostgreSQL 验证一次性创建、事务轮换、并发单替代者、授权/限额继承、幂等吊销和派生过期；完整凭据必须在数据库 JSON 表示中不存在。
 - `virtual_key_auth_test.go` 贯通签发、PostgreSQL 查询和 HTTP Middleware，验证错误 Secret、未知前缀、吊销、绝对过期、轮换宽限、Tenant/Project 禁用、伪造作用域 Header 和缓存显式失效。
 - `model_catalog_schema_test.go` 用真实 PostgreSQL 验证逻辑/物理模型分离、租户唯一性、严格 Capability/Region/Endpoint 约束、绑定兼容性触发器、配置漂移防护和无凭据列。
+- `model_list_test.go` 贯通真实 Key 签发、认证、项目/Key 白名单三态与 `/v1/models`，验证 active Provider/Deployment 过滤、跨租户复合外键、伪造 Header 和响应不泄漏物理目录。

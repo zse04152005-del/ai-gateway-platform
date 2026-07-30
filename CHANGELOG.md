@@ -23,6 +23,7 @@
 - 新增 Virtual Key 生命周期服务与管理 API：加密随机签发、一次性明文返回、HMAC-SHA-256 摘要、事务化单替代者轮换、幂等吊销和读取时派生过期，并以真实 PostgreSQL 并发测试验证。
 - 新增数据面 Virtual Key 认证中间件：严格 Bearer 解析、版本化 HMAC 常量时间验证、Tenant/Project/Key 状态决策、可信 Principal Context、有界正缓存与显式失效。
 - 新增模型目录：分离 Provider、租户 LogicalModel 与物理 Deployment，以严格 Capability/Region/Data Retention 契约和数据库触发器阻止不兼容绑定及后续配置漂移。
+- 新增项目模型授权与 `GET /v1/models`：计算项目白名单、Key 三态收窄和 active 目录交集，并修复显式空 Key 白名单被折叠为继承策略的问题。
 
 ### Changed
 

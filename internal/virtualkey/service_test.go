@@ -84,6 +84,28 @@ func TestManagerCreatePersistsOnlyDigestAndReturnsPlaintextOnce(t *testing.T) {
 	}
 }
 
+func TestManagerCreatePreservesExplicitEmptyModelDeny(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	store := &stubStore{}
+	manager := mustTestManager(t, store, mustTestDigester(t), now)
+	empty := []string{}
+
+	issued, err := manager.Create(context.Background(), CreateCommand{
+		TenantID: testTenantID, ProjectID: testProjectID, Mode: "live",
+		AllowedModels: &empty, Actor: "unit:explicit-deny",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if issued.Metadata.AllowedModels == nil || len(*issued.Metadata.AllowedModels) != 0 {
+		t.Fatalf("issued allowed models = %#v, want explicit empty slice", issued.Metadata.AllowedModels)
+	}
+	if store.created.AllowedModels == nil || *store.created.AllowedModels == nil || len(*store.created.AllowedModels) != 0 {
+		t.Fatalf("stored allowed models = %#v, want non-nil empty slice", store.created.AllowedModels)
+	}
+}
+
 func TestManagerRetriesIdentityCollisionWithoutReturningFailedPlaintext(t *testing.T) {
 	now := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
 	store := &stubStore{createErrors: []error{ErrCollision, nil}}
