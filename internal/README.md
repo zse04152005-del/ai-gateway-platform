@@ -14,6 +14,7 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `catalog`：Provider、LogicalModel、Deployment 和 Capability。
 - `routing`：候选过滤、决策、健康、重试和熔断。
 - `proxy`：普通与 SSE 代理、取消和背压。
+- `sse`：Provider-neutral 有界 SSE framing；统一处理网络分片、多行 data、comment、`[DONE]`、非法字段与行/事件资源上限。
 - `limits`：RPM/TPM/并发。
 - `budget`：Account、Reservation 和 Settlement。
 - `metering`：Usage Event、Ledger 和价格。

@@ -8,7 +8,7 @@
 - 数字 Loopback HTTP 仅在 `AllowInsecureLoopback` 被测试代码显式启用时可用，生产配置不会隐式降级。
 - Deployment 必须绑定同 Provider 的 Secret Reference。`BuildRequest` 在请求构造的最后边界通过 `providersecret.Locator` 解析凭据，将调用方拥有的 `[]byte` 写入 Authorization 后立即清零；Factory、Registry、错误、Usage、日志结构和 Fixture 都不保存明文 Key。
 - Secret Resolver 的私有错误不会向上透传，只返回稳定的 `ErrCredentialUnavailable`。
-- 请求最大 1 MiB、普通响应最大 1 MiB、错误响应读取最大 64 KiB、SSE 单行最大 64 KiB、单事件最大 256 KiB。
+- 请求最大 1 MiB、普通响应最大 1 MiB、错误响应读取最大 64 KiB；SSE framing 复用 `internal/sse`，单行最大 64 KiB、含 comment/metadata 的完整事件最大 256 KiB。
 - Provider 原始错误正文不会进入 `NormalizedError`；只使用 HTTP 状态、合法的 `X-Request-ID` 和有界 `Retry-After`。
 
 ## 当前协议映射

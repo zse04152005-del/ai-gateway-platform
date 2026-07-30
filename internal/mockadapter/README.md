@@ -9,7 +9,7 @@
 - Mock 场景只通过最多 64 KiB 的严格 `provider_options` Schema 选择；未知 Option/Scenario、Stream 语义冲突与超范围 Delay 都返回 `ErrUnsupportedParameter`。
 - Mock Provider 没有 Policy Label 协议映射，因此非空 `PolicyLabels` 会显式失败，不能静默删除可能影响结果的策略字段。
 - 普通响应最大 1 MiB，顶层/Choice/Message/Tool 字段使用白名单；未知普通响应字段产生 `ErrProtocol`，未知 Usage 字段则按计费契约保留精确 Raw Evidence 与排序 JSON Pointer。
-- SSE Parser 限制单行 64 KiB、事件 256 KiB；Role/Content/Reasoning/Tool/Extension 分离为不同 Chunk，未知 Event 字段隔离到 `provider_extension`。
+- SSE framing 复用 `internal/sse`，限制单行 64 KiB、完整事件 256 KiB；Role/Content/Reasoning/Tool/Extension 分离为不同 Chunk，未知 Provider JSON 字段隔离到 `provider_extension`。
 - Finish Event 会等待后续 Usage Event 或 `[DONE]`，最终输出 `usage_status=present|missing`，不会把“尚未收到”折叠为 0；缺少 `[DONE]`、重复 Finish/Usage、超大行和错误 JSON均为协议失败。
 - `Next(ctx)` 取消会关闭 Body，解除阻塞网络读取并传播取消到 Mock Provider；`Close` 幂等。
 - 429/503/4xx/5xx/Timeout 映射为有限 `NormalizedError`；原始 Provider Message 不进入 Error，Retry-After 只接受 24 小时内的秒数或 HTTP Date。

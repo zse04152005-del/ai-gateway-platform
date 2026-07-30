@@ -1,7 +1,6 @@
 package openaiadapter
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/provideradapter"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/sse"
 )
 
 const (
@@ -75,9 +75,9 @@ type pendingFinish struct {
 }
 
 type openAIStream struct {
-	body   io.ReadCloser
-	reader *bufio.Reader
-	now    func() time.Time
+	body    io.ReadCloser
+	decoder *sse.Decoder
+	now     func() time.Time
 
 	nextMu    sync.Mutex
 	closeOnce sync.Once
@@ -123,9 +123,14 @@ func (openAI *openAIAdapter) OpenStream(
 		_ = response.Body.Close()
 		return nil, protocolError("open_stream", "invalid_content_type", err)
 	}
-	return &openAIStream{
-		body: response.Body, reader: bufio.NewReaderSize(response.Body, maximumSSELineBytes), now: openAI.now,
-	}, nil
+	decoder, err := sse.NewDecoder(response.Body, sse.Limits{
+		MaxLineBytes: maximumSSELineBytes, MaxEventBytes: maximumSSEEventBytes,
+	})
+	if err != nil {
+		_ = response.Body.Close()
+		return nil, protocolError("open_stream", "invalid_sse_limits", err)
+	}
+	return &openAIStream{body: response.Body, decoder: decoder, now: openAI.now}, nil
 }
 
 // Next returns one validated normalized fact. Calls are serialized and context
@@ -209,54 +214,22 @@ func (stream *openAIStream) Close() error {
 func (stream *openAIStream) readEvent(ctx context.Context) (sseEvent, error) {
 	stopClose := context.AfterFunc(ctx, func() { _ = stream.Close() })
 	defer stopClose()
-	var data bytes.Buffer
-	eventType := "message"
-	heartbeat := false
-	started := false
-	for {
-		line, isPrefix, err := stream.reader.ReadLine()
-		if isPrefix {
+	event, err := stream.decoder.Next()
+	if err != nil {
+		switch {
+		case errors.Is(err, sse.ErrLineTooLarge):
 			return sseEvent{}, protocolError("read_stream", "line_too_large", ErrResponseTooLarge)
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) && started {
-				return sseEvent{eventType: eventType, data: data.Bytes(), heartbeat: heartbeat && data.Len() == 0}, nil
-			}
+		case errors.Is(err, sse.ErrEventTooLarge):
+			return sseEvent{}, protocolError("read_stream", "event_too_large", ErrResponseTooLarge)
+		case errors.Is(err, sse.ErrUnknownField):
+			return sseEvent{}, protocolError("read_stream", "unknown_sse_field", nil)
+		case errors.Is(err, sse.ErrInvalidField):
+			return sseEvent{}, protocolError("read_stream", "invalid_sse_field", nil)
+		default:
 			return sseEvent{}, err
 		}
-		started = true
-		if len(line) == 0 {
-			if data.Len() == 0 && !heartbeat {
-				started = false
-				continue
-			}
-			return sseEvent{eventType: eventType, data: data.Bytes(), heartbeat: heartbeat && data.Len() == 0}, nil
-		}
-		if line[0] == ':' {
-			heartbeat = true
-			continue
-		}
-		field, value, found := bytes.Cut(line, []byte{':'})
-		if !found {
-			field, value = line, nil
-		}
-		value = bytes.TrimPrefix(value, []byte{' '})
-		switch string(field) {
-		case "data":
-			if data.Len() > 0 {
-				data.WriteByte('\n')
-			}
-			if data.Len()+len(value) > maximumSSEEventBytes {
-				return sseEvent{}, protocolError("read_stream", "event_too_large", ErrResponseTooLarge)
-			}
-			data.Write(value)
-		case "event":
-			eventType = string(value)
-		case "id", "retry":
-		default:
-			return sseEvent{}, protocolError("read_stream", "unknown_sse_field", nil)
-		}
 	}
+	return sseEvent{eventType: event.Type, data: event.Data, heartbeat: event.Comment}, nil
 }
 
 func (stream *openAIStream) parseDataEvent(event sseEvent) error {
