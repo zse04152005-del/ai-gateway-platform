@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P03-T02：创建 control-plane 进程`
+`P03-T03：创建 metering-worker 进程（进行中）`
 
-P03-T01 gateway 进程骨架、健康探针与有限时优雅关闭已经完成并通过远程 Linux race CI；下一步建立 control-plane 管理面进程。
+P03-T01 gateway 与 P03-T02 control-plane 已完成并通过远程 Linux race CI；当前建立可连接事件总线、响应停止信号并优雅退出的 metering-worker。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
@@ -95,5 +95,13 @@ Invoke-RestMethod http://localhost:8081/admin/v1/status
 ```
 
 control-plane 与 gateway 使用不同监听端口；当前只开放非敏感状态路由，业务管理 API 将在后续身份、租户与领域任务中逐步启用。
+
+启动 metering-worker 事件总线连接骨架：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action metering-worker
+```
+
+worker 当前验证 broker bootstrap 连接与优雅停止；Kafka 消费协议、用量事件和账本在 P09/P10 实现。
 
 `.env` 只用于本地并被 Git 忽略，禁止写入真实生产密钥。

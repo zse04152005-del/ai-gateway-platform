@@ -22,3 +22,4 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `observability`：日志、指标和 Trace。
 - `httpserver`：三个进程共享的 HTTP 健康接口与有限时生命周期；不承载领域规则。
 - `controlplane`：控制面管理路由装配；领域规则通过后续 application/domain 模块提供。
+- `meteringworker`：计量进程的事件总线 bootstrap 会话与停止生命周期；不提前承载消费/账本规则。

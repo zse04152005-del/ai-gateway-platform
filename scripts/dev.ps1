@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('bootstrap', 'mod-verify', 'compose-up', 'compose-down', 'gateway', 'control-plane', 'test', 'test-race', 'build', 'check-env', 'fmt', 'fmt-check', 'lint', 'vuln', 'ci-lint', 'secret-scan', 'check', 'migrate-validate', 'migrate-up', 'migrate-down', 'migrate-version')]
+    [ValidateSet('bootstrap', 'mod-verify', 'compose-up', 'compose-down', 'gateway', 'control-plane', 'metering-worker', 'test', 'test-race', 'build', 'check-env', 'fmt', 'fmt-check', 'lint', 'vuln', 'ci-lint', 'secret-scan', 'check', 'migrate-validate', 'migrate-up', 'migrate-down', 'migrate-version')]
     [string]$Action
 )
 
@@ -140,6 +140,12 @@ switch ($Action) {
         Import-LocalEnv
         Push-Location $ProjectRoot
         try { Invoke-Checked go 'run' './cmd/control-plane' } finally { Pop-Location }
+    }
+    'metering-worker' {
+        Require-Command go
+        Import-LocalEnv
+        Push-Location $ProjectRoot
+        try { Invoke-Checked go 'run' './cmd/metering-worker' } finally { Pop-Location }
     }
     'test' {
         Require-Command go
