@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
 )
 
 const defaultVersion = "dev"
@@ -35,7 +36,7 @@ func NewHandler(version string) http.Handler {
 	mux.HandleFunc("/admin/v1/status", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
 			writer.Header().Set("Allow", http.MethodGet)
-			apierror.WriteHTTP(writer, methodError, "", "control_plane_error")
+			apierror.WriteHTTP(writer, methodError, correlation.RequestID(request.Context()), "control_plane_error")
 			return
 		}
 		writeJSON(writer, http.StatusOK, statusResponse{
@@ -44,8 +45,8 @@ func NewHandler(version string) http.Handler {
 			Version: version,
 		})
 	})
-	mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
-		apierror.WriteHTTP(writer, notFoundError, "", "control_plane_error")
+	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		apierror.WriteHTTP(writer, notFoundError, correlation.RequestID(request.Context()), "control_plane_error")
 	})
 	return mux
 }

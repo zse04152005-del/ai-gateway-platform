@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
 )
 
 const (
@@ -83,13 +84,17 @@ func NewServer(options Options) (*Server, error) {
 	}, nil); err != nil {
 		return nil, fmt.Errorf("invalid not-ready public error: %w", err)
 	}
+	correlationManager, err := correlation.New(correlation.Options{ErrorType: identity.errorType})
+	if err != nil {
+		return nil, fmt.Errorf("create request correlation manager: %w", err)
+	}
 
 	server := &Server{
 		serviceName:     strings.TrimSpace(options.ServiceName),
 		shutdownTimeout: options.ShutdownTimeout,
 	}
 	server.httpServer = &http.Server{
-		Handler:           server.routes(identity, options.ApplicationHandler),
+		Handler:           correlationManager.Middleware(server.routes(identity, options.ApplicationHandler)),
 		ReadHeaderTimeout: options.ReadHeaderTimeout,
 		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
@@ -180,8 +185,8 @@ func (s *Server) routes(identity healthIdentity, applicationHandler http.Handler
 		Type:    "invalid_request_error",
 	}, nil)
 	if applicationHandler == nil {
-		applicationHandler = http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-			apierror.WriteHTTP(writer, notFoundError, "", identity.errorType)
+		applicationHandler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			apierror.WriteHTTP(writer, notFoundError, correlation.RequestID(request.Context()), identity.errorType)
 		})
 	}
 
@@ -189,20 +194,20 @@ func (s *Server) routes(identity healthIdentity, applicationHandler http.Handler
 	mux.HandleFunc("GET /health/live", func(writer http.ResponseWriter, _ *http.Request) {
 		writeJSON(writer, http.StatusOK, healthResponse{Status: "ok", Version: identity.version})
 	})
-	mux.HandleFunc("GET /health/ready", func(writer http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /health/ready", func(writer http.ResponseWriter, request *http.Request) {
 		if !s.Ready() {
-			apierror.WriteHTTP(writer, notReadyError, "", identity.errorType)
+			apierror.WriteHTTP(writer, notReadyError, correlation.RequestID(request.Context()), identity.errorType)
 			return
 		}
 		writeJSON(writer, http.StatusOK, healthResponse{Status: "ok", Version: identity.version})
 	})
-	mux.HandleFunc("/health/live", func(writer http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/health/live", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Allow", http.MethodGet)
-		apierror.WriteHTTP(writer, methodError, "", identity.errorType)
+		apierror.WriteHTTP(writer, methodError, correlation.RequestID(request.Context()), identity.errorType)
 	})
-	mux.HandleFunc("/health/ready", func(writer http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/health/ready", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Allow", http.MethodGet)
-		apierror.WriteHTTP(writer, methodError, "", identity.errorType)
+		apierror.WriteHTTP(writer, methodError, correlation.RequestID(request.Context()), identity.errorType)
 	})
 	mux.Handle("/", applicationHandler)
 	return mux

@@ -89,6 +89,40 @@ func TestHealthEndpointsReflectLifecycleAndIdentity(t *testing.T) {
 	}
 }
 
+func TestHTTPServerCorrelatesErrorsAndReplacesReplayedClientID(t *testing.T) {
+	server := newTestServer(t, nil, time.Second)
+	clientID := "client-request-correlation"
+	traceID := "11111111111111111111111111111111"
+	parentSpanID := "2222222222222222"
+	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	request.Header.Set("X-Request-Id", clientID)
+	request.Header.Set("traceparent", "00-"+traceID+"-"+parentSpanID+"-01")
+	first := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(first, request)
+
+	if got := first.Header().Get("X-Request-Id"); got != clientID {
+		t.Fatalf("X-Request-Id = %q, want %q", got, clientID)
+	}
+	responseTraceparent := first.Header().Get("traceparent")
+	if !strings.HasPrefix(responseTraceparent, "00-"+traceID+"-") || strings.Contains(responseTraceparent, parentSpanID) {
+		t.Fatalf("response traceparent = %q", responseTraceparent)
+	}
+	var body apierror.Envelope
+	decodeBody(t, first, &body)
+	if body.Error.RequestID != clientID {
+		t.Fatalf("body request_id = %q, want %q", body.Error.RequestID, clientID)
+	}
+
+	replay := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	replay.Header.Set("X-Request-Id", clientID)
+	second := httptest.NewRecorder()
+	server.Handler().ServeHTTP(second, replay)
+	if got := second.Header().Get("X-Request-Id"); got == clientID || !strings.HasPrefix(got, "req_") {
+		t.Fatalf("replayed X-Request-Id = %q, want new server ID", got)
+	}
+}
+
 func TestServeRejectsInvalidAndRepeatedLifecycle(t *testing.T) {
 	server := newTestServer(t, nil, time.Second)
 	var nilContext context.Context
