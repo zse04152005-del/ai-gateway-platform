@@ -1,7 +1,7 @@
 # P02 工程环境阶段性检查
 
 > 日期：2026-07-30  
-> 状态：进行中
+> 状态：已完成
 
 ## 已验证
 
@@ -24,6 +24,9 @@
 - `.golangci.yml` v2 配置校验通过，golangci-lint 输出 `0 issues`，govulncheck 输出 `No vulnerabilities found`，actionlint 退出码 0。
 - CI 工作流包含 Go 质量/构建、临时 PostgreSQL 迁移状态机、YAML/禁止本地密钥位置/高风险模式/Gitleaks 三类 Job。故意未格式化且失败的临时测试文件分别令格式门禁和单测退出 1，删除后完整正向门禁重新通过。
 - 本地第三方 gitleaks Docker 扫描因会向镜像暴露仓库内容而被安全策略拒绝，镜像未拉取、容器未运行；改用受控本地模式扫描，完整 Gitleaks 保留在隔离 GitHub runner。
+- 已在 GitHub 账号 `zse04152005-del` 下建立新的公开仓库 [`ai-gateway-platform`](https://github.com/zse04152005-del/ai-gateway-platform)，默认分支为 `main`；本项目使用仓库级提交身份 `zse04152005-del <226900615+zse04152005-del@users.noreply.github.com>`，未修改全局 Git 身份。
+- 首次远程 Actions 运行 `30524635838` 真实发现并拦截 Go 1.26.0 标准库漏洞与 5 个 YAML 文件末尾多余空行；将最低 Go 工具链提升至 1.26.5、修正 YAML 并升级 `actions/checkout`/`actions/setup-go` 后，运行 `30525356663` 的三个 Job 全绿。
+- Go 模块路径已从规划占位地址调整为真实仓库 `github.com/zse04152005-del/ai-gateway-platform`；对应提交的最终远程运行 [`30525934377`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30525934377) 全绿，覆盖 YAML、密钥位置、高风险模式、Gitleaks、模块校验、格式、vet、lint、Linux race test、构建、govulncheck、迁移顺序和真实 PostgreSQL 迁移生命周期。
 
 ## Docker/WSL 准备记录
 
@@ -42,10 +45,6 @@
 - 安装收尾重启后，CBS/WU/PendingFileRenameOperations 均为 False，当前登录令牌已包含 `docker-users`；Docker Linux 引擎启动成功。
 - 首次 Compose 等待定位到 ClickHouse 健康检查失败：BusyBox `wget` 将 `localhost` 解析为未监听的 IPv6 `::1`。改为 `127.0.0.1` 后只重建 ClickHouse，7 个服务全部变为 healthy。
 
-## 尚未验证
+## 环境差异说明
 
-- Windows 本机 `-race` 需要 CGO/C 编译器；当前本地环境未安装，CI 的 Linux Runner 将执行 race test。
-- GitHub Actions 尚未由远程仓库触发。
-- Git 仓库尚未配置 user.name/user.email，因此未创建初始提交，避免伪造用户身份。
-
-以上未验证项保持清单未完成，不作为通过证据。
+- Windows 本机 `-race` 需要 CGO/C 编译器，当前本地环境未额外安装；等价的 Linux `go test -race -count=1 ./...` 已在 GitHub Actions 运行 `30525934377` 中真实通过，因此不构成 P02 阶段阻塞。
