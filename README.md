@@ -2,7 +2,7 @@
 
 企业级 AI 网关与模型成本治理平台项目目录。
 
-当前处于：**本地基础设施与工程工具阶段（P02）**。P00/P01 已完成；Go、Docker/WSL2 与 7 个本地基础服务已经真实验证。
+当前处于：**应用骨架与横切能力阶段（P03）**。P00～P02 已完成；Go、Docker/WSL2、7 个本地基础服务与远程 CI 已真实验证。
 
 ## 项目核心特色
 
@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P02 阶段门禁：首次远程 GitHub Actions 运行`
+`P03-T01：创建 gateway 进程（进行中）`
 
-本地 P02 任务全部完成。当前缺少 Git `user.name`/`user.email` 和远端仓库，不能创建真实身份提交或触发远程 CI；在获得这些信息并看到 Actions 通过前，不进入 P03。
+P02 本地与远程门禁已经完成，项目进入三个进程及统一横切能力的实现阶段。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
@@ -74,5 +74,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action migrate-valid
 powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action migrate-up
 powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action migrate-version
 ```
+
+启动 gateway 并检查健康探针：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action gateway
+
+# 另开一个终端
+Invoke-RestMethod http://localhost:8080/health/live
+Invoke-RestMethod http://localhost:8080/health/ready
+```
+
+`Ctrl+C` 会先关闭 readiness，再在 `SHUTDOWN_TIMEOUT` 内排空普通在途请求。详细生命周期语义见 [`cmd/gateway/README.md`](./cmd/gateway/README.md)。
 
 `.env` 只用于本地并被 Git 忽略，禁止写入真实生产密钥。

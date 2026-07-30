@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('bootstrap', 'mod-verify', 'compose-up', 'compose-down', 'test', 'test-race', 'build', 'check-env', 'fmt', 'fmt-check', 'lint', 'vuln', 'ci-lint', 'secret-scan', 'check', 'migrate-validate', 'migrate-up', 'migrate-down', 'migrate-version')]
+    [ValidateSet('bootstrap', 'mod-verify', 'compose-up', 'compose-down', 'gateway', 'test', 'test-race', 'build', 'check-env', 'fmt', 'fmt-check', 'lint', 'vuln', 'ci-lint', 'secret-scan', 'check', 'migrate-validate', 'migrate-up', 'migrate-down', 'migrate-version')]
     [string]$Action
 )
 
@@ -128,6 +128,12 @@ switch ($Action) {
         Require-Command docker
         Push-Location $ProjectRoot
         try { Invoke-Checked docker 'compose' '--env-file' '.env' '-f' 'deploy/compose/compose.yaml' 'down' } finally { Pop-Location }
+    }
+    'gateway' {
+        Require-Command go
+        Import-LocalEnv
+        Push-Location $ProjectRoot
+        try { Invoke-Checked go 'run' './cmd/gateway' } finally { Pop-Location }
     }
     'test' {
         Require-Command go
