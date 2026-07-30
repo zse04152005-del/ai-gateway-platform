@@ -10,24 +10,26 @@ Provider Adapter 只负责供应商协议与统一领域协议之间的转换，
 
 P05-T02 的可执行类型、不变量、原始 Usage 证据和安全日志规则见 [`normalized-provider-types.md`](./normalized-provider-types.md) 与 `internal/adapter`；本文件中的接口将在 P05-T03 注册表任务落地。
 
-## 2. 建议 Go 接口
+## 2. 已实现 Go 接口
 
 ```go
-type ProviderAdapter interface {
-    Type() ProviderType
-    Capabilities(ctx context.Context, deployment Deployment) CapabilitySet
-    BuildRequest(ctx context.Context, in NormalizedRequest) (*http.Request, error)
-    ParseResponse(ctx context.Context, resp *http.Response) (NormalizedResponse, error)
+type Adapter interface {
+    Type() Type
+    Capabilities(ctx context.Context) CapabilitySet
+    BuildRequest(ctx context.Context, in adapter.NormalizedRequest) (*http.Request, error)
+    ParseResponse(ctx context.Context, resp *http.Response) (adapter.NormalizedResponse, error)
     OpenStream(ctx context.Context, resp *http.Response) (ChunkStream, error)
-    NormalizeError(ctx context.Context, resp *http.Response, body []byte) NormalizedError
-    EstimateUsage(ctx context.Context, in NormalizedRequest) EstimatedUsage
+    NormalizeError(ctx context.Context, resp *http.Response, body []byte) adapter.NormalizedError
+    EstimateUsage(ctx context.Context, in adapter.NormalizedRequest) (adapter.NormalizedUsage, error)
 }
 
 type ChunkStream interface {
-    Next(ctx context.Context) (NormalizedChunk, error)
+    Next(ctx context.Context) (adapter.NormalizedChunk, error)
     Close() error
 }
 ```
+
+实际接口位于 `internal/provideradapter`；`Factory.New` 将已经过校验的 Catalog Provider/Deployment 绑定为一个 Adapter，注册与启动/发布门禁见 [`provider-adapter-registry.md`](./provider-adapter-registry.md)。
 
 ## 3. NormalizedRequest
 

@@ -5,6 +5,7 @@
 当前核心文档：
 
 - [`provider-adapter-contract.md`](./provider-adapter-contract.md)：Adapter 职责、能力和一致性矩阵。
+- [`provider-adapter-registry.md`](./provider-adapter-registry.md)：显式 Factory 注册、启动/发布未知类型门禁与安全失败语义。
 - [`normalized-provider-types.md`](./normalized-provider-types.md)：P05 已实现的 Request/Response/Chunk/Error/Usage 可执行类型契约。
 - [`error-and-retry-semantics.md`](./error-and-retry-semantics.md)：公开错误、重试与部分失败语义。
 

@@ -150,4 +150,4 @@ usage := adapter.NormalizedUsage{
 - 结构化日志不包含 Prompt、Response、Tool Arguments、Options、Extension 或 Usage 原文；
 - NormalizedError 反射检查没有 Raw Body、Cause、Credential、Prompt 或 Response 字段。
 
-P05-T03 将基于这些类型建立 Adapter 注册表；P05-T04/P05-T05 将通过真实 Mock Provider HTTP 协议验证类型转换和统一一致性套件。
+P05-T03 已基于这些类型建立不可变 Factory 注册表与启动/发布未知 Type 门禁；P05-T04/P05-T05 将通过真实 Mock Provider HTTP 协议验证类型转换和统一一致性套件。

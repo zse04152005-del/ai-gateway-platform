@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P05-T02：定义 NormalizedRequest/Response/Chunk/Error/Usage（进行中）`
+`P05-T03：实现 Provider Adapter 注册表（进行中）`
 
-P05-T01 已交付不依赖外网、场景可精确触发的 Mock Provider；当前正在固化供应商无关的请求、响应、流、错误与 Usage 事实类型，为后续 Adapter 注册表、Mock Adapter 和一致性套件建立不会静默丢失未知计费字段的协议边界。
+P05-T01～T02 已交付确定性 Mock Provider 与供应商无关的请求、响应、流、错误和 Usage 事实类型；当前正在建立显式、不可变的 Adapter Factory 注册表，使未知协议类型在启动或 Catalog 发布时 fail closed，而不是延迟到生产请求才失败。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
