@@ -166,4 +166,4 @@ Retry-After 只接受正整数秒或有效 HTTP Date，且必须在 24 小时内
 - Context 取消使阻塞 `Next` 退出并取消上游；
 - Registry 启动校验和 Factory Build 的真实组合路径。
 
-核心包执行 20 轮重复测试并在 Linux CI 使用 race detector。P05-T05 将把这些断言提取为 Adapter Conformance Suite，而不是复制 Mock 专用测试。
+核心包执行 20 轮重复测试并在 Linux CI 使用 race detector。P05-T05 已把跨 Adapter 的普通/SSE/取消/错误/缓存/工具/Finish/未知字段断言提取到 [`Adapter Conformance Suite`](./adapter-conformance-suite.md)；本文件中的大小限制、状态机异常和 Mock Options 等协议专项测试继续保留，避免统一套件稀释实现边界。

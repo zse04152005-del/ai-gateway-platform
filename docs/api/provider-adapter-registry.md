@@ -143,4 +143,4 @@ Factory 可能因为客户端装配、协议版本或依赖不可用失败。`Fa
 - nil Adapter、Factory Type 变化、返回 Adapter Type 错配 fail closed；
 - 64 个并发 Resolve + Build，在 Linux CI race detector 下验证不可变 Registry 读路径。
 
-P05-T04 已以 `mock` Factory 执行真实注册与 HTTP 转换；P11 配置发布实现必须调用本文件的 publication 门禁，不能复制一份宽松规则。
+P05-T04 已以 `mock` Factory 执行真实注册与 HTTP 转换；P05-T05 已用同一 Factory/Registry 路径接入统一 [`Adapter Conformance Suite`](./adapter-conformance-suite.md)，没有在测试中直接构造私有 Adapter。P11 配置发布实现必须调用本文件的 publication 门禁，不能复制一份宽松规则。

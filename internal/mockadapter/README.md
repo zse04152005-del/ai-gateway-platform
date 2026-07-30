@@ -15,4 +15,4 @@
 - 429/503/4xx/5xx/Timeout 映射为有限 `NormalizedError`；原始 Provider Message 不进入 Error，Retry-After 只接受 24 小时内的秒数或 HTTP Date。
 - 本 Adapter 不伪造本地 Tokenizer 估算，`EstimateUsage` 返回 `ErrUsageEstimationUnavailable`；账务事实来自 Provider Usage Fixture。
 
-P05-T05 会将这些真实 HTTP 行为抽成所有 Adapter 共用的一致性套件。
+P05-T05 已将跨 Adapter 的真实 HTTP 行为抽到 `internal/adapterconformance`；本包通过注册 Fixture 运行统一矩阵，同时保留 Mock Options、大小限制和 SSE 异常状态机专项测试。

@@ -14,4 +14,4 @@
 - `FactoryError.Error()` 只输出 Type、Deployment ID 和稳定错误，不拼接 Factory cause；私有 cause 仍可用 `errors.Is/As` 诊断。
 - Factory 自身必须并发安全，并通过构造注入 HTTP Client、Secret Resolver 等依赖；Registry 不持有凭据，也不把凭据写入错误。
 
-P05-T04 将注册 Mock Factory 并使用真实本地 Mock Provider HTTP 协议实现全部 Adapter 方法；P05-T05 会把 Registry 构造/解析也纳入一致性套件。
+P05-T04 已注册 Mock Factory 并使用真实本地 Mock Provider HTTP 协议实现全部 Adapter 方法；P05-T05 已把 Registry Build 路径纳入统一 `adapterconformance` 一致性套件。

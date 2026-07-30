@@ -30,6 +30,7 @@
 - 新增供应商无关的 Normalized Request/Response/Chunk/Error/Usage 类型、不变量和深拷贝；严格区分 Usage 缺失与真实 0，以不可变原始 JSON + SHA-256 保留未知计量证据，并提供默认不暴露内容的结构化日志值。
 - 新增不可变 Provider Adapter Factory 注册表与运行时接口，按精确 Type 解析，并在启动/发布阶段聚合拒绝未知、非法或重复 Provider；Factory nil、身份漂移、Adapter 类型错配和敏感内部错误均 fail closed。
 - 新增真实 HTTP Mock Adapter：完整映射普通、SSE、工具、缓存/推理 Usage 与错误 Fixture；严格限制本地 Endpoint/Body/SSE，保留未知 Usage 证据，隔离未知 Stream Event，并在 Context 取消时关闭上游连接。
+- 新增统一 Adapter Conformance Suite：新增 Adapter 只注册协议 Fixture 与部署构造器，即可通过真实 HTTP 执行普通/SSE/取消/429/5xx/缓存 Usage/工具/Finish Reason/未知字段矩阵；缺失 Fixture、逃离隔离 Origin、请求突变、非法 Normalized Fact 和错误正文泄漏均 fail closed。
 
 ### Changed
 

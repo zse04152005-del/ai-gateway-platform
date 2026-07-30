@@ -1,6 +1,6 @@
 # Provider Adapter 契约
 
-> 状态：Accepted for MVP；Normalized Types 已实现
+> 状态：Implemented；Normalized Types、Registry、Mock Adapter 与 Conformance Suite 已实现
 > 日期：2026-07-30  
 > 对应任务：P01-T08
 
@@ -103,7 +103,7 @@ Route Candidate 必须先满足请求所需能力。
 
 ## 8. 一致性测试矩阵
 
-每个 Adapter 至少声明 Applicable/Not Applicable，并执行：
+P05-T05 已将以下核心项目实现为 `internal/adapterconformance` 的强制真实 HTTP Fixture；当前首批 MVP Adapter 不允许空 Fixture 或静默 Skip：
 
 1. 非流式成功与 usage。
 2. SSE 正常结束、Chunk 跨网络分片、`[DONE]`。
@@ -115,6 +115,8 @@ Route Candidate 必须先满足请求所需能力。
 8. 上下文过长、认证和内容策略错误。
 9. 未知字段、错误 JSON、超大 Chunk。
 10. Provider 协议版本变化。
+
+当前统一套件自动执行 1、2、3 中的 429/5xx、5、6、7、9 中的未知字段，并补充 Finish Reason 矩阵；首包后断流/部分 Usage、上下文过长/认证/内容策略、错误 JSON/超大 Chunk 与协议版本金丝雀继续由 Adapter 专项 Fixture 和 P05-T06 扩展。统一注册与断言见 [`adapter-conformance-suite.md`](./adapter-conformance-suite.md)。
 
 ## 9. 安全要求
 
