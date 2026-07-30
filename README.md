@@ -33,7 +33,7 @@
 
 ## 计划技术栈
 
-- Go 1.26.5（当前已安装版本；`go.mod` 最低工具链为 1.26.0）
+- Go 1.26.5（当前已安装版本；`go.mod` 最低安全工具链为 1.26.5）
 - PostgreSQL + pgx/sqlc
 - Redis + Lua
 - Redpanda/Kafka

@@ -48,4 +48,3 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, attributes/drop-sensitive, batch]
       exporters: [debug]
-
