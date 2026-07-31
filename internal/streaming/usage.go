@@ -60,6 +60,7 @@ type UsageAggregationSnapshot struct {
 	LocalEstimate    *UsageTrack
 	TerminalObserved bool
 	TerminalStatus   adapter.UsageStatus
+	SequenceObserved bool
 	LastSequence     uint64
 	UsageEvents      int
 	Closed           bool
@@ -73,6 +74,7 @@ type UsageAggregator struct {
 	options UsageAggregatorOptions
 
 	mu               sync.Mutex
+	sequenceObserved bool
 	lastSequence     uint64
 	usageEvents      int
 	providerFinal    *UsageTrack
@@ -117,7 +119,7 @@ func (aggregator *UsageAggregator) Observe(chunk adapter.NormalizedChunk) error 
 	if aggregator.closed {
 		return ErrUsageAggregationClosed
 	}
-	if chunk.Sequence <= aggregator.lastSequence {
+	if aggregator.sequenceObserved && chunk.Sequence <= aggregator.lastSequence {
 		return ErrUsageAggregationOrder
 	}
 
@@ -138,6 +140,7 @@ func (aggregator *UsageAggregator) Observe(chunk adapter.NormalizedChunk) error 
 	case adapter.ChunkMessageStart, adapter.ChunkContentDelta, adapter.ChunkReasoningDelta,
 		adapter.ChunkToolDelta, adapter.ChunkHeartbeat, adapter.ChunkProviderExtension:
 	}
+	aggregator.sequenceObserved = true
 	aggregator.lastSequence = chunk.Sequence
 	return nil
 }
@@ -185,8 +188,9 @@ func (aggregator *UsageAggregator) Snapshot() UsageAggregationSnapshot {
 		Effective:     cloneUsageTrack(effectiveUsageTrack(aggregator.providerFinal, aggregator.providerChunks, aggregator.localEstimate)),
 		ProviderFinal: cloneUsageTrack(aggregator.providerFinal), ProviderChunks: cloneUsageTrack(aggregator.providerChunks),
 		LocalEstimate: cloneUsageTrack(aggregator.localEstimate), TerminalObserved: aggregator.terminalObserved,
-		TerminalStatus: aggregator.terminalStatus, LastSequence: aggregator.lastSequence,
-		UsageEvents: aggregator.usageEvents, Closed: aggregator.closed,
+		TerminalStatus: aggregator.terminalStatus, SequenceObserved: aggregator.sequenceObserved,
+		LastSequence: aggregator.lastSequence,
+		UsageEvents:  aggregator.usageEvents, Closed: aggregator.closed,
 	}
 }
 

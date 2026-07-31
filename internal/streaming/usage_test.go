@@ -36,7 +36,7 @@ func TestUsageAggregatorPreservesThreeSourcesAndSelectsProviderFinal(t *testing.
 		snapshot.ProviderChunks.Events != 2 || snapshot.ProviderChunks.FirstSequence != 2 ||
 		snapshot.ProviderChunks.LastSequence != 3 || snapshot.UsageEvents != 3 ||
 		!snapshot.TerminalObserved || snapshot.TerminalStatus != adapter.UsageStatusPresent ||
-		snapshot.LastSequence != 4 || !snapshot.Closed {
+		!snapshot.SequenceObserved || snapshot.LastSequence != 4 || !snapshot.Closed {
 		t.Fatalf("Snapshot() = %+v", snapshot)
 	}
 	if snapshot.ProviderChunks.Usage.OutputTokens != adapter.Tokens(3) ||
@@ -47,6 +47,20 @@ func TestUsageAggregatorPreservesThreeSourcesAndSelectsProviderFinal(t *testing.
 	snapshot.ProviderChunks.Usage.UnmappedFields = append(snapshot.ProviderChunks.Usage.UnmappedFields, "/mutated")
 	if len(aggregator.Snapshot().ProviderChunks.Usage.UnmappedFields) != 0 {
 		t.Fatal("Snapshot() aliases aggregator usage")
+	}
+}
+
+func TestUsageAggregatorAcceptsAdapterSequenceStartingAtZero(t *testing.T) {
+	aggregator := newTestUsageAggregator(t, 2)
+	observeUsageChunk(t, aggregator, usageMessageStart(0))
+	observeUsageChunk(t, aggregator, providerUsageDelta(t, 1, 3, 1, "sequence-one-usage"))
+	snapshot := aggregator.Snapshot()
+	if !snapshot.SequenceObserved || snapshot.LastSequence != 1 || snapshot.ProviderChunks == nil ||
+		snapshot.ProviderChunks.FirstSequence != 1 {
+		t.Fatalf("zero-based Snapshot() = %+v", snapshot)
+	}
+	if err := aggregator.Observe(usageHeartbeat(0)); !errors.Is(err, ErrUsageAggregationOrder) {
+		t.Fatalf("stale zero Sequence error = %v", err)
 	}
 }
 
