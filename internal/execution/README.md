@@ -16,4 +16,6 @@
 
 记录依赖在上游调用前不可用时 Gateway fail closed，防止产生“已经向 Provider 付费但系统完全没有 Attempt 身份”的调用。上游结束后的最终写入失败会返回统一记录依赖错误并留下可恢复的 active Attempt，P13 Reconciler/Runbook 负责识别和收敛。
 
+P08-T08 的 RouteDecision/RetryDecision 是独立于 Request/Attempt 状态机的追加式解释事实：选路记录先于 Attempt 创建，retry 分类记录先于 Attempt 结束。它们只引用执行身份并保存有限策略事实，不复制 Prompt、响应、Endpoint、Secret 或 Raw Usage Evidence。
+
 客户端取消后的终态写入使用脱离入站取消但最多 2 秒的 Context；Request 和 Attempt 均记录 `cancelled/client_cancelled`，同时不延长 Provider I/O 的生命周期。

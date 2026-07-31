@@ -165,6 +165,7 @@ switch ($Action) {
     }
     'test-integration' {
         Require-Command go
+        Import-LocalEnv
         Push-Location $ProjectRoot
         try {
             $IntegrationArguments = @('test', '-count=1', '-tags=integration', '-timeout=2m', './tests/integration/...')

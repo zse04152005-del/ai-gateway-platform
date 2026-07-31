@@ -245,6 +245,57 @@ func TestRoutePolicyValidationAndStaticResolverBoundaries(t *testing.T) {
 	}
 }
 
+func TestPolicyDecisionValidationBoundaries(t *testing.T) {
+	t.Parallel()
+	deploymentID := routeUUID(6, 242)
+	draw := uint64(4)
+	valid := []PolicyDecision{
+		{
+			PolicyVersion: "release/1", Mode: RouteFixed, SelectedDeploymentID: deploymentID,
+			Priority: 1, Weight: 10, EligibleCount: 2,
+		},
+		{
+			PolicyVersion: "release/2", Mode: RouteWeighted, SelectedDeploymentID: deploymentID,
+			Priority: 1, Weight: 10, EligibleCount: 2, TotalWeight: 20, RandomDraw: &draw,
+		},
+		{
+			PolicyVersion: "release/3", Mode: RouteWeighted, SelectedDeploymentID: deploymentID,
+			Priority: 1, Weight: 10, EligibleCount: 1, TotalWeight: 10,
+		},
+	}
+	for _, decision := range valid {
+		if err := decision.Validate(); err != nil {
+			t.Fatalf("PolicyDecision.Validate(%+v) error = %v", decision, err)
+		}
+	}
+
+	outOfRangeDraw := uint64(20)
+	invalid := []PolicyDecision{
+		{},
+		{
+			PolicyVersion: "release/1", Mode: RoutePriority, SelectedDeploymentID: deploymentID,
+			EligibleCount: 1, TotalWeight: 1,
+		},
+		{
+			PolicyVersion: "release/1", Mode: RouteWeighted, SelectedDeploymentID: deploymentID,
+			Weight: 10, EligibleCount: 2, TotalWeight: 20,
+		},
+		{
+			PolicyVersion: "release/1", Mode: RouteWeighted, SelectedDeploymentID: deploymentID,
+			Weight: 10, EligibleCount: 2, TotalWeight: 20, RandomDraw: &outOfRangeDraw,
+		},
+		{
+			PolicyVersion: "release/1", Mode: "private_mode", SelectedDeploymentID: deploymentID,
+			EligibleCount: 1,
+		},
+	}
+	for index, decision := range invalid {
+		if err := decision.Validate(); err == nil {
+			t.Fatalf("PolicyDecision.Validate(invalid[%d]) error = nil", index)
+		}
+	}
+}
+
 func TestSelectorPolicyAndRandomFailuresFailClosed(t *testing.T) {
 	t.Parallel()
 	candidate := routeCandidate(1, "provider-a", "deployment-a", 251)

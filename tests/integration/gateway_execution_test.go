@@ -458,6 +458,8 @@ func cleanupGatewayExecutionFixtures(t *testing.T, database *sql.DB) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	statements := []string{
+		`DELETE FROM app.route_retry_decisions WHERE request_id LIKE 'integration-execution-%'`,
+		`DELETE FROM app.route_decisions WHERE request_id LIKE 'integration-execution-%'`,
 		`DELETE FROM app.route_attempt_status_events WHERE attempt_id IN (
 			SELECT id FROM app.route_attempts WHERE request_id LIKE 'integration-execution-%')`,
 		`DELETE FROM app.gateway_request_status_events WHERE request_id LIKE 'integration-execution-%'`,

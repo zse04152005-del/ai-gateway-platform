@@ -237,6 +237,60 @@ func TestDecisionSerializationContainsOnlyFiniteEvidence(t *testing.T) {
 	}
 }
 
+func TestDecisionValidationBoundaries(t *testing.T) {
+	t.Parallel()
+	valid := retry.Decision{
+		PolicyVersion: "retry-classifier/v1", Action: retry.NoRetry,
+		Reason: retry.ReasonAuthentication, FailureClass: retry.FailureAuthentication,
+		Submission: retry.Submitted, AttemptNumber: 1, MaximumAttempts: 3,
+		RemainingBudgetMS: 1000,
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Decision.Validate(valid) error = %v", err)
+	}
+
+	invalid := []retry.Decision{
+		{},
+		{
+			PolicyVersion: "retry-classifier/v1", Action: "private_action",
+			Reason: retry.ReasonAuthentication, FailureClass: retry.FailureAuthentication,
+			Submission: retry.Submitted, AttemptNumber: 1, MaximumAttempts: 3,
+		},
+		{
+			PolicyVersion: "retry-classifier/v1", Action: retry.NoRetry,
+			Reason: "private_reason", FailureClass: retry.FailureAuthentication,
+			Submission: retry.Submitted, AttemptNumber: 1, MaximumAttempts: 3,
+		},
+		{
+			PolicyVersion: "retry-classifier/v1", Action: retry.NoRetry,
+			Reason: retry.ReasonAuthentication, FailureClass: "private_class",
+			Submission: retry.Submitted, AttemptNumber: 1, MaximumAttempts: 3,
+		},
+		{
+			PolicyVersion: "retry-classifier/v1", Action: retry.RetryAllowed,
+			Reason: retry.ReasonModelOutputStarted, FailureClass: retry.FailureTimeout,
+			Submission: retry.Submitted, AttemptNumber: 1, MaximumAttempts: 3,
+			ModelOutputStarted: true,
+		},
+		{
+			PolicyVersion: "retry-classifier/v1", Action: retry.NoRetry,
+			Reason: retry.ReasonAttemptLimit, FailureClass: retry.FailureCapacity,
+			Submission: retry.Submitted, AttemptNumber: 4, MaximumAttempts: 3,
+		},
+		{
+			PolicyVersion: "retry-classifier/v1", Action: retry.NoRetry,
+			Reason: retry.ReasonDeadlineExhausted, FailureClass: retry.FailureTimeout,
+			Submission: retry.Submitted, AttemptNumber: 1, MaximumAttempts: 3,
+			RemainingBudgetMS: -1,
+		},
+	}
+	for index, decision := range invalid {
+		if err := decision.Validate(); !errors.Is(err, retry.ErrInvalid) {
+			t.Fatalf("Decision.Validate(invalid[%d]) error = %v, want ErrInvalid", index, err)
+		}
+	}
+}
+
 func TestClassifyIsDeterministicAndConcurrent(t *testing.T) {
 	t.Parallel()
 	failure := newProviderFailure(t, adapter.ErrorProvider5xx, true, nil)

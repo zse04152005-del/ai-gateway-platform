@@ -12,6 +12,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
@@ -53,7 +54,7 @@ func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog, selector
 		}
 		routeSelector = selectors[0]
 	}
-	return newHandler(authenticator, modelCatalog, routeSelector, nil, nil, nil), nil
+	return newHandler(authenticator, modelCatalog, routeSelector, nil, nil, nil, nil), nil
 }
 
 // NewExecutableHandler requires the complete non-streaming execution chain.
@@ -63,9 +64,10 @@ func NewExecutableHandler(
 	routeSelector RouteSelector,
 	executor ChatExecutor,
 	recorder execution.Recorder,
+	decisionRecorder routedecision.Recorder,
 ) (http.Handler, error) {
 	return NewExecutableHandlerWithFailover(
-		authenticator, modelCatalog, routeSelector, executor, recorder, DefaultFailoverOptions(),
+		authenticator, modelCatalog, routeSelector, executor, recorder, decisionRecorder, DefaultFailoverOptions(),
 	)
 }
 
@@ -76,6 +78,7 @@ func NewExecutableHandlerWithFailover(
 	routeSelector RouteSelector,
 	executor ChatExecutor,
 	recorder execution.Recorder,
+	decisionRecorder routedecision.Recorder,
 	options FailoverOptions,
 ) (http.Handler, error) {
 	if authenticator == nil {
@@ -93,13 +96,16 @@ func NewExecutableHandlerWithFailover(
 	if recorder == nil {
 		return nil, errors.New("gateway execution recorder must not be nil")
 	}
+	if decisionRecorder == nil {
+		return nil, errors.New("gateway route decision recorder must not be nil")
+	}
 	failover, err := newNonStreamFailover(
-		routeSelector, executor, recorder, options, time.Now, defaultRetryWaiter,
+		routeSelector, executor, recorder, decisionRecorder, options, time.Now, defaultRetryWaiter,
 	)
 	if err != nil {
 		return nil, err
 	}
-	return newHandler(authenticator, modelCatalog, routeSelector, executor, recorder, failover), nil
+	return newHandler(authenticator, modelCatalog, routeSelector, executor, recorder, decisionRecorder, failover), nil
 }
 
 func newHandler(
@@ -108,6 +114,7 @@ func newHandler(
 	routeSelector RouteSelector,
 	executor ChatExecutor,
 	recorder execution.Recorder,
+	decisionRecorder routedecision.Recorder,
 	failover *nonStreamFailover,
 ) http.Handler {
 	notFound := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -118,7 +125,7 @@ func newHandler(
 	})
 	mux := http.NewServeMux()
 	mux.Handle("/v1/models", authenticator.Middleware(newModelsHandler(modelCatalog)))
-	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector, executor, recorder, failover)))
+	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector, executor, recorder, decisionRecorder, failover)))
 	mux.Handle("/v1/", authenticator.Middleware(notFound))
 	mux.Handle("/", notFound)
 	return mux

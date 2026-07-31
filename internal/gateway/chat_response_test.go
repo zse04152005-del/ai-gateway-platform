@@ -15,6 +15,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 )
@@ -29,6 +30,7 @@ func TestExecutableChatHandlerReturnsUnifiedSuccess(t *testing.T) {
 		selector,
 		executor,
 		executionRecorder,
+		&stubRouteDecisionRecorder{},
 	)
 	if err != nil {
 		t.Fatalf("NewExecutableHandler() error = %v", err)
@@ -95,6 +97,7 @@ func TestExecutableChatHandlerDefersStreamingToP07(t *testing.T) {
 		&stubRouteSelector{},
 		executor,
 		&stubExecutionRecorder{},
+		&stubRouteDecisionRecorder{},
 	)
 	if err != nil {
 		t.Fatalf("NewExecutableHandler() error = %v", err)
@@ -220,7 +223,7 @@ func TestExecutionRecordingFailuresFailClosedAroundProviderBoundary(t *testing.T
 			executor := &stubChatExecutor{response: gatewayNormalizedResponse(t)}
 			handler, err := NewExecutableHandler(
 				&stubAuthenticator{principal: validGatewayPrincipal()}, &stubModelCatalog{},
-				selector, executor, test.recorder,
+				selector, executor, test.recorder, &stubRouteDecisionRecorder{},
 			)
 			if err != nil {
 				t.Fatalf("NewExecutableHandler() error = %v", err)
@@ -254,7 +257,7 @@ func TestClientCancellationReachesExecutorAndRecordsClientCancelled(t *testing.T
 	recorder := &stubExecutionRecorder{}
 	handler, err := NewExecutableHandler(
 		&stubAuthenticator{principal: validGatewayPrincipal()}, &stubModelCatalog{},
-		&stubRouteSelector{}, executor, recorder,
+		&stubRouteSelector{}, executor, recorder, &stubRouteDecisionRecorder{},
 	)
 	if err != nil {
 		t.Fatalf("NewExecutableHandler() error = %v", err)
@@ -340,20 +343,24 @@ func TestNewExecutableHandlerRejectsMissingExecutionDependencies(t *testing.T) {
 	selector := &stubRouteSelector{}
 	executor := &stubChatExecutor{}
 	recorder := &stubExecutionRecorder{}
-	if _, err := NewExecutableHandler(nil, catalog, selector, executor, recorder); err == nil {
+	decisions := &stubRouteDecisionRecorder{}
+	if _, err := NewExecutableHandler(nil, catalog, selector, executor, recorder, decisions); err == nil {
 		t.Fatal("nil authenticator accepted")
 	}
-	if _, err := NewExecutableHandler(authenticator, nil, selector, executor, recorder); err == nil {
+	if _, err := NewExecutableHandler(authenticator, nil, selector, executor, recorder, decisions); err == nil {
 		t.Fatal("nil catalog accepted")
 	}
-	if _, err := NewExecutableHandler(authenticator, catalog, nil, executor, recorder); err == nil {
+	if _, err := NewExecutableHandler(authenticator, catalog, nil, executor, recorder, decisions); err == nil {
 		t.Fatal("nil selector accepted")
 	}
-	if _, err := NewExecutableHandler(authenticator, catalog, selector, nil, recorder); err == nil {
+	if _, err := NewExecutableHandler(authenticator, catalog, selector, nil, recorder, decisions); err == nil {
 		t.Fatal("nil executor accepted")
 	}
-	if _, err := NewExecutableHandler(authenticator, catalog, selector, executor, nil); err == nil {
+	if _, err := NewExecutableHandler(authenticator, catalog, selector, executor, nil, decisions); err == nil {
 		t.Fatal("nil recorder accepted")
+	}
+	if _, err := NewExecutableHandler(authenticator, catalog, selector, executor, recorder, nil); err == nil {
+		t.Fatal("nil route decision recorder accepted")
 	}
 }
 
@@ -405,6 +412,36 @@ type stubExecutionRecorder struct {
 	failureErr            error
 	completionContextErr  error
 	completionHasDeadline bool
+}
+
+type stubRouteDecisionRecorder struct {
+	inputs      []routedecision.Input
+	retryInputs []routedecision.RetryInput
+	err         error
+	retryErr    error
+}
+
+func (stub *stubRouteDecisionRecorder) RecordRetry(_ context.Context, input routedecision.RetryInput) (routedecision.RetryRecord, error) {
+	stub.retryInputs = append(stub.retryInputs, input)
+	if stub.retryErr != nil {
+		return routedecision.RetryRecord{}, stub.retryErr
+	}
+	return routedecision.RetryRecord{
+		RequestID: input.RequestID, AttemptNo: input.AttemptNo,
+		Decision: input.Decision, DecidedAt: time.Now(),
+	}, nil
+}
+
+func (stub *stubRouteDecisionRecorder) Record(_ context.Context, input routedecision.Input) (routedecision.Record, error) {
+	stub.inputs = append(stub.inputs, input)
+	if stub.err != nil {
+		return routedecision.Record{}, stub.err
+	}
+	return routedecision.Record{
+		RequestID: input.RequestID, DecisionNo: len(stub.inputs), NextAttemptNo: input.NextAttemptNo,
+		Outcome: input.Outcome, Filter: input.Filter, Policy: input.Policy, Retry: input.Retry,
+		DecidedAt: time.Now(),
+	}, nil
 }
 
 func (stub *stubExecutionRecorder) StartRequest(_ context.Context, start execution.StartRequest) (execution.GatewayRequest, error) {

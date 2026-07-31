@@ -29,6 +29,8 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/mockprovider"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/provideradapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/retry"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/virtualkey"
@@ -249,7 +251,11 @@ func buildNonStreamGateway(t *testing.T, database *sql.DB) nonStreamCredential {
 	if err != nil {
 		t.Fatalf("execution.NewPostgresRecorder() error = %v", err)
 	}
-	application, err := gateway.NewExecutableHandler(authenticator, catalogStore, selector, executor, recorder)
+	decisionStore, err := routedecision.NewPostgresStore(database, time.Now)
+	if err != nil {
+		t.Fatalf("routedecision.NewPostgresStore() error = %v", err)
+	}
+	application, err := gateway.NewExecutableHandler(authenticator, catalogStore, selector, executor, recorder, decisionStore)
 	if err != nil {
 		t.Fatalf("gateway.NewExecutableHandler() error = %v", err)
 	}
@@ -478,6 +484,20 @@ func assertNonStreamExecution(
 	if attempts != attemptCount {
 		t.Fatalf("RouteAttempt count for %s = %d, want %d", requestID, attempts, attemptCount)
 	}
+	expectedRetryDecisions := attemptCount
+	expectedRouteDecisions := 1
+	expectedFinalAction := retry.NoRetry
+	if requestStatus == execution.RequestSucceeded {
+		expectedRetryDecisions = 0
+		expectedFinalAction = ""
+	}
+	if requestReason == "failover_exhausted" {
+		expectedRouteDecisions = 2
+		expectedFinalAction = retry.DifferentDeploymentOnly
+	}
+	assertRouteDecisionCounts(
+		t, database, requestID, expectedRouteDecisions, expectedRetryDecisions, expectedFinalAction,
+	)
 	requestEvents := queryStatusEvents(context.Background(), t, database, `
 		SELECT to_status FROM app.gateway_request_status_events
 		WHERE request_id = $1 ORDER BY request_version`, requestID)
@@ -601,6 +621,42 @@ func assertNonStreamRepeatedFailure(
 	if seen != attemptCount {
 		t.Fatalf("RouteAttempt count for %s = %d, want %d", requestID, seen, attemptCount)
 	}
+	assertRouteDecisionCounts(t, database, requestID, attemptCount*2-1, attemptCount, retry.NoRetry)
+}
+
+func assertRouteDecisionCounts(
+	t *testing.T,
+	database *sql.DB,
+	requestID string,
+	wantRoutes, wantRetries int,
+	wantFinalAction retry.Action,
+) {
+	t.Helper()
+	var routes, retries int
+	if err := database.QueryRow(`SELECT count(*) FROM app.route_decisions WHERE request_id = $1`, requestID).
+		Scan(&routes); err != nil {
+		t.Fatalf("count RouteDecisions for %s: %v", requestID, err)
+	}
+	if err := database.QueryRow(`SELECT count(*) FROM app.route_retry_decisions WHERE request_id = $1`, requestID).
+		Scan(&retries); err != nil {
+		t.Fatalf("count RouteRetryDecisions for %s: %v", requestID, err)
+	}
+	if routes != wantRoutes || retries != wantRetries {
+		t.Fatalf("route/retry decision counts for %s = %d/%d, want %d/%d",
+			requestID, routes, retries, wantRoutes, wantRetries)
+	}
+	if wantRetries == 0 {
+		return
+	}
+	var finalAction string
+	if err := database.QueryRow(`SELECT retry_decision->>'action'
+		FROM app.route_retry_decisions WHERE request_id = $1 ORDER BY attempt_no DESC LIMIT 1`, requestID).
+		Scan(&finalAction); err != nil {
+		t.Fatalf("query final retry decision for %s: %v", requestID, err)
+	}
+	if finalAction != string(wantFinalAction) {
+		t.Fatalf("final retry action for %s = %q, want %q", requestID, finalAction, wantFinalAction)
+	}
 }
 
 func assertNoGatewayRequest(t *testing.T, database *sql.DB, requestID string) {
@@ -649,6 +705,8 @@ func cleanupNonStreamFixtures(t *testing.T, database *sql.DB) {
 		query string
 		args  []any
 	}{
+		{name: "retry decisions", query: `DELETE FROM app.route_retry_decisions WHERE request_id LIKE 'e2e-nonstream-%'`},
+		{name: "route decisions", query: `DELETE FROM app.route_decisions WHERE request_id LIKE 'e2e-nonstream-%'`},
 		{name: "attempt events", query: `DELETE FROM app.route_attempt_status_events WHERE attempt_id IN
 			(SELECT id FROM app.route_attempts WHERE request_id LIKE 'e2e-nonstream-%')`},
 		{name: "request events", query: `DELETE FROM app.gateway_request_status_events WHERE request_id LIKE 'e2e-nonstream-%'`},

@@ -20,6 +20,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
@@ -113,6 +114,7 @@ func newChatCompletionsHandler(
 	routeSelector RouteSelector,
 	executor ChatExecutor,
 	recorder execution.Recorder,
+	decisionRecorder routedecision.Recorder,
 	failover *nonStreamFailover,
 ) http.Handler {
 	methodError := newRequestProblem(
@@ -177,9 +179,22 @@ func newChatCompletionsHandler(
 			return
 		}
 		if normalized.ProviderRequest.Stream {
-			if _, err = selectInitialRoute(request, normalized, routeSelector); err != nil {
+			selectionRequest, routeErr := routeSelectionRequest(request, normalized)
+			if routeErr == nil {
+				_, routeErr = selectAndRecordRoute(
+					request.Context(), routeSelector, decisionRecorder, recordedRequest.ID,
+					recordedRequest.AttemptCount+1, selectionRequest, nil,
+				)
+			}
+			if routeErr != nil {
+				err = routeErr
 				if recorder != nil {
-					err = finalizeRequestFailure(request.Context(), recorder, recordedRequest, err)
+					if errors.Is(err, errRouteDecisionRecord) {
+						_ = failRecordedRequest(request.Context(), recorder, recordedRequest, execution.RequestFailed, "route_decision_record_unavailable")
+						err = executionRecordPublicError(err)
+					} else {
+						err = finalizeRequestFailure(request.Context(), recorder, recordedRequest, routeSelectionPublicError(err))
+					}
 				}
 				apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 				return

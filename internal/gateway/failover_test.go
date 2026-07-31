@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/correlation"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/retry"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
@@ -232,7 +234,7 @@ func TestExecutableHandlerReturnsAttemptCountAfterTransparentFailover(t *testing
 	recorder := &stubExecutionRecorder{}
 	handler, err := NewExecutableHandler(
 		&stubAuthenticator{principal: validGatewayPrincipal()}, &stubModelCatalog{},
-		selector, executor, recorder,
+		selector, executor, recorder, &stubRouteDecisionRecorder{},
 	)
 	if err != nil {
 		t.Fatalf("NewExecutableHandler() error = %v", err)
@@ -275,7 +277,7 @@ func TestFailoverOptionsConstructorAndWaiterFailClosed(t *testing.T) {
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("DefaultFailoverOptions().Validate() error = %v", err)
 	}
-	if _, err := newNonStreamFailover(nil, nil, nil, valid, time.Now, defaultRetryWaiter); !errors.Is(err, ErrFailoverInvalid) {
+	if _, err := newNonStreamFailover(nil, nil, nil, nil, valid, time.Now, defaultRetryWaiter); !errors.Is(err, ErrFailoverInvalid) {
 		t.Fatalf("newNonStreamFailover(nil) error = %v", err)
 	}
 	if err := defaultRetryWaiter(nil, 0); !errors.Is(err, ErrFailoverInvalid) { //nolint:staticcheck // explicit nil boundary
@@ -285,6 +287,150 @@ func TestFailoverOptionsConstructorAndWaiterFailClosed(t *testing.T) {
 	cancel()
 	if err := defaultRetryWaiter(cancelled, time.Second); !errors.Is(err, context.Canceled) {
 		t.Fatalf("defaultRetryWaiter(cancelled) error = %v", err)
+	}
+}
+
+func TestFailoverRecordsInitialAndRetrySelections(t *testing.T) {
+	selector := &sequenceFailoverSelector{steps: []selectorStep{
+		{selection: failoverSelection(failoverDeploymentA)},
+		{selection: failoverSelection(failoverDeploymentB)},
+	}}
+	executor := &sequenceFailoverExecutor{steps: []executorStep{
+		{err: errors.Join(proxy.ErrTransport, errors.New("private route failure marker"))},
+		{response: gatewayNormalizedResponse(t)},
+	}}
+	executionRecorder := &stubExecutionRecorder{}
+	decisionRecorder := &stubRouteDecisionRecorder{}
+	coordinator, err := newNonStreamFailover(
+		selector, executor, executionRecorder, decisionRecorder,
+		FailoverOptions{
+			MaximumAttempts: 3, TotalTimeout: 5 * time.Second,
+			MinimumAttemptWindow: 10 * time.Millisecond, AdditionalCost: retry.CostAllowed,
+		},
+		time.Now, noWait,
+	)
+	if err != nil {
+		t.Fatalf("newNonStreamFailover() error = %v", err)
+	}
+	if _, err = coordinator.Execute(
+		context.Background(), failoverSelectionRequest(), failoverRecordedRequest(),
+		failoverProviderRequest(), "req_failover_fixture",
+	); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(decisionRecorder.inputs) != 2 || len(decisionRecorder.retryInputs) != 1 {
+		t.Fatalf("route/retry decision counts = %d/%d, want 2/1", len(decisionRecorder.inputs), len(decisionRecorder.retryInputs))
+	}
+	first, second := decisionRecorder.inputs[0], decisionRecorder.inputs[1]
+	if first.NextAttemptNo != 1 || first.Outcome != routedecision.OutcomeSelected || first.Retry != nil ||
+		second.NextAttemptNo != 2 || second.Outcome != routedecision.OutcomeSelected || second.Retry == nil ||
+		second.Retry.Action != retry.DifferentDeploymentOnly || second.Retry.FailureClass != retry.FailureTransport {
+		t.Fatalf("route decisions = first:%+v second:%+v", first, second)
+	}
+	if decisionRecorder.retryInputs[0].AttemptNo != 1 ||
+		decisionRecorder.retryInputs[0].Decision.Action != retry.DifferentDeploymentOnly {
+		t.Fatalf("retry decision = %+v", decisionRecorder.retryInputs[0])
+	}
+}
+
+func TestRouteDecisionRecordFailurePreventsProviderCall(t *testing.T) {
+	selector := &sequenceFailoverSelector{steps: []selectorStep{{selection: failoverSelection(failoverDeploymentA)}}}
+	executor := &sequenceFailoverExecutor{steps: []executorStep{{response: gatewayNormalizedResponse(t)}}}
+	executionRecorder := &stubExecutionRecorder{}
+	decisionRecorder := &stubRouteDecisionRecorder{err: routedecision.ErrUnavailable}
+	coordinator, err := newNonStreamFailover(
+		selector, executor, executionRecorder, decisionRecorder,
+		FailoverOptions{
+			MaximumAttempts: 3, TotalTimeout: 5 * time.Second,
+			MinimumAttemptWindow: 10 * time.Millisecond, AdditionalCost: retry.CostAllowed,
+		},
+		time.Now, noWait,
+	)
+	if err != nil {
+		t.Fatalf("newNonStreamFailover() error = %v", err)
+	}
+	_, executeErr := coordinator.Execute(
+		context.Background(), failoverSelectionRequest(), failoverRecordedRequest(),
+		failoverProviderRequest(), "req_failover_fixture",
+	)
+	status, envelope := apierror.Render(executeErr, "req_failover_fixture", "gateway_error")
+	if status != http.StatusServiceUnavailable || envelope.Error.Code != "EXECUTION_RECORD_UNAVAILABLE" {
+		t.Fatalf("Execute() error = %v, want execution record unavailable", executeErr)
+	}
+	if len(executor.selections) != 0 || executionRecorder.attemptCalls != 0 ||
+		executionRecorder.failedReason != "route_decision_record_unavailable" {
+		t.Fatalf("provider/attempt/failure = %d/%d/%q", len(executor.selections), executionRecorder.attemptCalls, executionRecorder.failedReason)
+	}
+}
+
+func TestFailoverPersistsTerminalNoRetryDecision(t *testing.T) {
+	failure := mustProviderError(t, adapter.NormalizedError{
+		Code: "PROVIDER_AUTH_REJECTED", Category: adapter.ErrorAuth,
+		ProviderStatus: http.StatusUnauthorized, SafeMessage: "Provider authentication failed",
+	})
+	selector := &sequenceFailoverSelector{steps: []selectorStep{{selection: failoverSelection(failoverDeploymentA)}}}
+	executor := &sequenceFailoverExecutor{steps: []executorStep{{err: failure}}}
+	executionRecorder := &stubExecutionRecorder{}
+	decisionRecorder := &stubRouteDecisionRecorder{}
+	coordinator, err := newNonStreamFailover(
+		selector, executor, executionRecorder, decisionRecorder,
+		FailoverOptions{
+			MaximumAttempts: 3, TotalTimeout: 5 * time.Second,
+			MinimumAttemptWindow: 10 * time.Millisecond, AdditionalCost: retry.CostAllowed,
+		},
+		time.Now, noWait,
+	)
+	if err != nil {
+		t.Fatalf("newNonStreamFailover() error = %v", err)
+	}
+	_, executeErr := coordinator.Execute(
+		context.Background(), failoverSelectionRequest(), failoverRecordedRequest(),
+		failoverProviderRequest(), "req_failover_fixture",
+	)
+	if !errors.Is(executeErr, failure) || len(decisionRecorder.retryInputs) != 1 ||
+		decisionRecorder.retryInputs[0].AttemptNo != 1 ||
+		decisionRecorder.retryInputs[0].Decision.Action != retry.NoRetry ||
+		decisionRecorder.retryInputs[0].Decision.Reason != retry.ReasonAuthentication {
+		t.Fatalf("terminal retry decision = error:%v inputs:%+v", executeErr, decisionRecorder.retryInputs)
+	}
+}
+
+func TestRetryDecisionRecordFailureCompletesAttemptAndPreventsNextAttempt(t *testing.T) {
+	selector := &sequenceFailoverSelector{steps: []selectorStep{
+		{selection: failoverSelection(failoverDeploymentA)},
+		{selection: failoverSelection(failoverDeploymentB)},
+	}}
+	executor := &sequenceFailoverExecutor{steps: []executorStep{
+		{err: proxy.ErrTransport},
+		{response: gatewayNormalizedResponse(t)},
+	}}
+	executionRecorder := &stubExecutionRecorder{}
+	decisionRecorder := &stubRouteDecisionRecorder{retryErr: routedecision.ErrUnavailable}
+	coordinator, err := newNonStreamFailover(
+		selector, executor, executionRecorder, decisionRecorder,
+		FailoverOptions{
+			MaximumAttempts: 3, TotalTimeout: 5 * time.Second,
+			MinimumAttemptWindow: 10 * time.Millisecond, AdditionalCost: retry.CostAllowed,
+		},
+		time.Now, noWait,
+	)
+	if err != nil {
+		t.Fatalf("newNonStreamFailover() error = %v", err)
+	}
+	_, executeErr := coordinator.Execute(
+		context.Background(), failoverSelectionRequest(), failoverRecordedRequest(),
+		failoverProviderRequest(), "req_failover_fixture",
+	)
+	status, envelope := apierror.Render(executeErr, "req_failover_fixture", "gateway_error")
+	if status != http.StatusServiceUnavailable || envelope.Error.Code != "EXECUTION_RECORD_UNAVAILABLE" ||
+		len(decisionRecorder.retryInputs) != 1 || len(selector.requests) != 1 ||
+		len(executor.selections) != 1 || executionRecorder.attemptCalls != 1 ||
+		executionRecorder.completionCalls != 1 || executionRecorder.retryCompletionCalls != 0 ||
+		len(executionRecorder.outcomes) != 1 ||
+		executionRecorder.outcomes[0].AttemptStatus != execution.AttemptRetryableFailed ||
+		executionRecorder.outcomes[0].RequestStatus != execution.RequestFailed {
+		t.Fatalf("retry record failure boundary = status:%d envelope:%+v selector:%d executor:%d recorder:%+v",
+			status, envelope, len(selector.requests), len(executor.selections), executionRecorder)
 	}
 }
 
@@ -342,7 +488,7 @@ func testFailoverCoordinator(
 ) *nonStreamFailover {
 	t.Helper()
 	coordinator, err := newNonStreamFailover(
-		selector, executor, recorder,
+		selector, executor, recorder, &stubRouteDecisionRecorder{},
 		FailoverOptions{
 			MaximumAttempts: 3, TotalTimeout: 5 * time.Second,
 			MinimumAttemptWindow: 10 * time.Millisecond, AdditionalCost: retry.CostAllowed,
@@ -358,9 +504,19 @@ func testFailoverCoordinator(
 func noWait(context.Context, time.Duration) error { return nil }
 
 func failoverSelection(deploymentID string) routing.Selection {
-	return routing.Selection{Candidate: catalog.RouteCandidate{
-		Deployment: catalog.Deployment{ID: deploymentID},
-	}}
+	return routing.Selection{
+		Candidate: catalog.RouteCandidate{Deployment: catalog.Deployment{ID: deploymentID}},
+		Filter: routing.FilterResult{
+			PolicyVersion: "candidate-filter/v1",
+			Decisions: []routing.CandidateDecision{{
+				DeploymentID: deploymentID, Eligible: true, Reason: routing.FilterEligible,
+			}},
+		},
+		Decision: routing.PolicyDecision{
+			PolicyVersion: "bootstrap-priority/v1", Mode: routing.RoutePriority,
+			SelectedDeploymentID: deploymentID, EligibleCount: 1,
+		},
+	}
 }
 
 func failoverSelectionRequest() routing.SelectionRequest {

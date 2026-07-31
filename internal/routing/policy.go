@@ -147,6 +147,37 @@ type PolicyDecision struct {
 	RandomDraw           *uint64   `json:"random_draw,omitempty"`
 }
 
+// Validate checks that the persisted score and selection facts are internally
+// consistent without consulting mutable catalog state.
+func (decision PolicyDecision) Validate() error {
+	if !routePolicyVersionPattern.MatchString(decision.PolicyVersion) ||
+		!routeDeploymentIDPattern.MatchString(decision.SelectedDeploymentID) ||
+		decision.Priority < 0 || decision.Weight < 0 ||
+		decision.EligibleCount < 1 || decision.EligibleCount > maximumCandidates {
+		return errors.New("route policy decision is invalid")
+	}
+	switch decision.Mode {
+	case RouteFixed, RoutePriority:
+		if decision.TotalWeight != 0 || decision.RandomDraw != nil {
+			return errors.New("non-weighted route decision contains weighted score facts")
+		}
+	case RouteWeighted:
+		if decision.Weight < 1 || decision.TotalWeight == 0 {
+			return errors.New("weighted route decision is invalid")
+		}
+		if decision.RandomDraw == nil {
+			if decision.EligibleCount != 1 || decision.TotalWeight != uint64(decision.Weight) {
+				return errors.New("weighted route decision without a draw is invalid")
+			}
+		} else if *decision.RandomDraw >= decision.TotalWeight {
+			return errors.New("weighted route decision draw is invalid")
+		}
+	default:
+		return errors.New("route policy decision mode is unsupported")
+	}
+	return nil
+}
+
 // Clone returns an alias-free decision.
 func (decision PolicyDecision) Clone() PolicyDecision {
 	cloned := decision

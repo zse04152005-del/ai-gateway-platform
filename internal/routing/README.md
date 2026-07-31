@@ -15,8 +15,8 @@ every returned deployment with a deterministic, first-failure policy:
 only the deployment ID, an eligibility bit, and a finite `FilterReason`; it
 never contains endpoint URLs, secret references, provider errors, prompts, or
 request content. `DecisionFor` supports direct lookup, while `Clone` permits
-alias-free storage and asynchronous observation. Persistent route-decision
-storage remains a P08-T08 responsibility.
+alias-free storage and asynchronous observation. P08-T08 validates this safe
+projection and persists every Selector evaluation through `routedecision`.
 
 The selector never reads credentials, sends HTTP, retries, reserves budget or
 capacity, or mutates health. `BudgetReader` and `CapacityReader` receive a
@@ -48,8 +48,9 @@ Every `Selection` carries a safe `PolicyDecision`: policy version, mode,
 selected deployment ID, priority, weight, eligible count, and—only for a real
 multi-candidate weighted choice—total weight and random draw. This is enough to
 replay interval selection without exposing content or infrastructure secrets.
-P08-T08 owns persistence; published multi-tenant policy storage is deliberately
-outside the process environment configuration.
+P08-T08 persists the decision together with the filter explanation before
+Provider I/O; published multi-tenant policy storage is deliberately outside
+the process environment configuration.
 
 `PassiveHealth` is the P08-T03 production bootstrap `HealthReader`. It keeps a
 bounded, per-deployment ring of time buckets and records request totals, HTTP

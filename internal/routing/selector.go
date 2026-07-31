@@ -57,7 +57,16 @@ type SelectionRequest struct {
 // Selection is the immutable catalog fact chosen for one first attempt.
 type Selection struct {
 	Candidate catalog.RouteCandidate
+	Filter    FilterResult
 	Decision  PolicyDecision
+}
+
+// Clone returns an alias-free selection and explanation.
+func (selection Selection) Clone() Selection {
+	return Selection{
+		Candidate: selection.Candidate.Clone(), Filter: selection.Filter.Clone(),
+		Decision: selection.Decision.Clone(),
+	}
 }
 
 // Selector filters candidates and applies one resolved first-attempt policy.
@@ -109,26 +118,29 @@ func (selector *Selector) Select(ctx context.Context, request SelectionRequest) 
 	}
 	result, err := selector.filter.Filter(ctx, request)
 	if err != nil {
-		return Selection{}, err
+		return Selection{Filter: result.Clone()}, err
 	}
+	selection := Selection{Filter: result.Clone()}
 	if len(result.eligible) == 0 {
-		return Selection{}, ErrNoCandidate
+		return selection, ErrNoCandidate
 	}
 	policy, err := selector.policies.Resolve(ctx, PolicyRequest{
 		TenantID: request.Access.TenantID, ProjectID: request.Access.ProjectID,
 		LogicalModel: request.Request.LogicalModel,
 	})
 	if err != nil {
-		return Selection{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
+		return selection, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
 	}
 	if err := policy.Validate(); err != nil {
-		return Selection{}, fmt.Errorf("%w: invalid resolved policy", ErrPolicyUnavailable)
+		return selection, fmt.Errorf("%w: invalid resolved policy", ErrPolicyUnavailable)
 	}
 	candidate, decision, err := selectByPolicy(result.eligible, policy, selector.random)
 	if err != nil {
-		return Selection{}, err
+		return selection, err
 	}
-	return Selection{Candidate: candidate.Clone(), Decision: decision.Clone()}, nil
+	selection.Candidate = candidate.Clone()
+	selection.Decision = decision.Clone()
+	return selection.Clone(), nil
 }
 
 func requiredRequestCapabilities(request adapter.NormalizedRequest) catalog.CapabilityRequirements {

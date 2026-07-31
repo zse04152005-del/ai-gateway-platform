@@ -103,6 +103,42 @@ func TestCandidateFilterRecordsEveryFiniteReason(t *testing.T) {
 	}
 }
 
+func TestFilterResultValidateExplanationBoundaries(t *testing.T) {
+	t.Parallel()
+	deploymentID := routeUUID(6, 230)
+	valid := FilterResult{
+		PolicyVersion: candidateFilterPolicyVersion,
+		Decisions: []CandidateDecision{{
+			DeploymentID: deploymentID, Eligible: true, Reason: FilterEligible,
+		}},
+	}
+	if err := valid.ValidateExplanation(); err != nil {
+		t.Fatalf("ValidateExplanation(valid) error = %v", err)
+	}
+
+	invalid := []FilterResult{
+		{},
+		{PolicyVersion: candidateFilterPolicyVersion, Decisions: []CandidateDecision{{
+			DeploymentID: "not-a-uuid", Eligible: true, Reason: FilterEligible,
+		}}},
+		{PolicyVersion: candidateFilterPolicyVersion, Decisions: []CandidateDecision{{
+			DeploymentID: deploymentID, Eligible: true, Reason: FilterUnhealthy,
+		}}},
+		{PolicyVersion: candidateFilterPolicyVersion, Decisions: []CandidateDecision{{
+			DeploymentID: deploymentID, Reason: "private_reason",
+		}}},
+		{PolicyVersion: candidateFilterPolicyVersion, Decisions: []CandidateDecision{
+			{DeploymentID: deploymentID, Eligible: true, Reason: FilterEligible},
+			{DeploymentID: deploymentID, Eligible: true, Reason: FilterEligible},
+		}},
+	}
+	for index, result := range invalid {
+		if err := result.ValidateExplanation(); err == nil {
+			t.Fatalf("ValidateExplanation(invalid[%d]) error = nil", index)
+		}
+	}
+}
+
 func TestCandidateFilterUsesStrictOrderAndShortCircuit(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

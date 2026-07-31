@@ -105,6 +105,37 @@ func (result FilterResult) Clone() FilterResult {
 	return cloned
 }
 
+// ValidateExplanation checks the bounded, content-free projection used by the
+// durable route-decision store. Eligible catalog facts remain intentionally
+// outside this validation boundary.
+func (result FilterResult) ValidateExplanation() error {
+	if !routePolicyVersionPattern.MatchString(result.PolicyVersion) || len(result.Decisions) > maximumCandidates {
+		return errors.New("route filter explanation is invalid")
+	}
+	seen := make(map[string]struct{}, len(result.Decisions))
+	for _, decision := range result.Decisions {
+		if !routeDeploymentIDPattern.MatchString(decision.DeploymentID) || !validFilterReason(decision.Reason) ||
+			(decision.Eligible != (decision.Reason == FilterEligible)) {
+			return errors.New("route candidate explanation is invalid")
+		}
+		if _, duplicate := seen[decision.DeploymentID]; duplicate {
+			return errors.New("route candidate explanation contains a duplicate deployment")
+		}
+		seen[decision.DeploymentID] = struct{}{}
+	}
+	return nil
+}
+
+func validFilterReason(reason FilterReason) bool {
+	switch reason {
+	case FilterEligible, FilterTenantNotAllowed, FilterCapabilityMissing, FilterRegionNotAllowed,
+		FilterInactive, FilterPreviouslyAttempted, FilterUnhealthy, FilterBudgetDenied, FilterCapacityUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // CandidateFilter applies the mandatory filters in a fixed, first-failure order.
 // It is immutable after construction and safe for concurrent use when its readers are.
 type CandidateFilter struct {

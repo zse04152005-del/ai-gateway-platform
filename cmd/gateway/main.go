@@ -30,6 +30,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/provideradapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/providersecret"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 )
@@ -173,6 +174,10 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create execution recorder: %w", err)
 	}
+	routeDecisionStore, err := routedecision.NewPostgresStore(database, time.Now)
+	if err != nil {
+		return fmt.Errorf("create route decision store: %w", err)
+	}
 	probeClient, err := newActiveHealthClient(cfg.UpstreamHTTP)
 	if err != nil {
 		return fmt.Errorf("create isolated active health client: %w", err)
@@ -189,7 +194,7 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 		return fmt.Errorf("create active health scheduler: %w", err)
 	}
 	applicationHandler, err := gateway.NewExecutableHandler(
-		authenticator, modelCatalog, routeSelector, circuitChatExecutor, executionRecorder,
+		authenticator, modelCatalog, routeSelector, circuitChatExecutor, executionRecorder, routeDecisionStore,
 	)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)

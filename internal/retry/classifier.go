@@ -133,6 +133,56 @@ type Decision struct {
 	ModelOutputStarted bool            `json:"model_output_started"`
 }
 
+// Validate checks that a persisted classifier result contains only finite,
+// bounded policy facts. It intentionally cannot reconstruct or retain Failure.
+func (decision Decision) Validate() error {
+	if decision.PolicyVersion != policyVersion || !validAction(decision.Action) ||
+		!validReason(decision.Reason) || !validFailureClass(decision.FailureClass) ||
+		!validSubmission(decision.Submission) || decision.AttemptNumber < 1 ||
+		decision.MaximumAttempts < 1 || decision.MaximumAttempts > maximumAttempts ||
+		decision.AttemptNumber > decision.MaximumAttempts || decision.RemainingBudgetMS < 0 ||
+		decision.RequiredDelayMS < 0 {
+		return ErrInvalid
+	}
+	if decision.ModelOutputStarted && decision.Action != NoRetry {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func validAction(action Action) bool {
+	return action == NoRetry || action == RetryAllowed || action == DifferentDeploymentOnly
+}
+
+func validReason(reason Reason) bool {
+	switch reason {
+	case ReasonModelOutputStarted, ReasonCallerCancelled, ReasonCallerDeadline, ReasonAuthentication,
+		ReasonPermission, ReasonInvalidRequest, ReasonContextLength, ReasonContentPolicy,
+		ReasonProviderNotRetryable, ReasonUnknownFailure, ReasonLocalAdapter, ReasonStreamTimeoutIneligible,
+		ReasonRateLimited, ReasonCapacity, ReasonProviderTimeout, ReasonProviderTemporary, ReasonTransport,
+		ReasonProtocol, ReasonFirstTokenTimeout, ReasonAttemptLimit, ReasonCostBudget, ReasonDeadlineExhausted,
+		ReasonRetryAfterExceeds, ReasonAttemptWindow:
+		return true
+	default:
+		return false
+	}
+}
+
+func validFailureClass(class FailureClass) bool {
+	switch class {
+	case FailureAuthentication, FailurePermission, FailureInvalidRequest, FailureContextLength,
+		FailureContentPolicy, FailureRateLimit, FailureCapacity, FailureTimeout, FailureProvider5xx,
+		FailureProtocol, FailureTransport, FailureCancelled, FailureLocalAdapter, FailureUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validSubmission(submission SubmissionState) bool {
+	return submission == NotSubmitted || submission == Submitted || submission == Unknown
+}
+
 type candidate struct {
 	action              Action
 	reason              Reason

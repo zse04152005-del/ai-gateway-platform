@@ -10,6 +10,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/retry"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 )
 
@@ -55,23 +56,25 @@ func (options FailoverOptions) Validate() error {
 type retryWaiter func(context.Context, time.Duration) error
 
 type nonStreamFailover struct {
-	selector RouteSelector
-	executor ChatExecutor
-	recorder execution.Recorder
-	options  FailoverOptions
-	now      func() time.Time
-	wait     retryWaiter
+	selector  RouteSelector
+	executor  ChatExecutor
+	recorder  execution.Recorder
+	decisions routedecision.Recorder
+	options   FailoverOptions
+	now       func() time.Time
+	wait      retryWaiter
 }
 
 func newNonStreamFailover(
 	selector RouteSelector,
 	executor ChatExecutor,
 	recorder execution.Recorder,
+	decisions routedecision.Recorder,
 	options FailoverOptions,
 	now func() time.Time,
 	wait retryWaiter,
 ) (*nonStreamFailover, error) {
-	if selector == nil || executor == nil || recorder == nil || now == nil || wait == nil {
+	if selector == nil || executor == nil || recorder == nil || decisions == nil || now == nil || wait == nil {
 		return nil, ErrFailoverInvalid
 	}
 	if err := options.Validate(); err != nil {
@@ -81,7 +84,7 @@ func newNonStreamFailover(
 		return nil, ErrFailoverInvalid
 	}
 	return &nonStreamFailover{
-		selector: selector, executor: executor, recorder: recorder,
+		selector: selector, executor: executor, recorder: recorder, decisions: decisions,
 		options: options, now: now, wait: wait,
 	}, nil
 }
@@ -93,7 +96,7 @@ func (failover *nonStreamFailover) Execute(
 	providerRequest adapter.NormalizedRequest,
 	requestID string,
 ) (chatCompletionResponse, error) {
-	if failover == nil || failover.selector == nil || failover.executor == nil || failover.recorder == nil ||
+	if failover == nil || failover.selector == nil || failover.executor == nil || failover.recorder == nil || failover.decisions == nil ||
 		ctx == nil || selectionRequest.Request.Validate() != nil || providerRequest.Validate() != nil ||
 		providerRequest.Stream || requestID == "" || recordedRequest.Status != execution.RequestRouting {
 		return chatCompletionResponse{}, ErrFailoverInvalid
@@ -105,8 +108,15 @@ func (failover *nonStreamFailover) Execute(
 		return chatCompletionResponse{}, ErrFailoverInvalid
 	}
 
-	selection, err := failover.selector.Select(executionContext, cloneSelectionRequest(selectionRequest))
+	selection, err := selectAndRecordRoute(
+		executionContext, failover.selector, failover.decisions, recordedRequest.ID,
+		recordedRequest.AttemptCount+1, selectionRequest, nil,
+	)
 	if err != nil {
+		if errors.Is(err, errRouteDecisionRecord) {
+			_ = failRecordedRequest(executionContext, failover.recorder, recordedRequest, execution.RequestFailed, "route_decision_record_unavailable")
+			return chatCompletionResponse{}, executionRecordPublicError(err)
+		}
 		publicError := routeSelectionPublicError(err)
 		if recordErr := finalizeRequestFailure(executionContext, failover.recorder, recordedRequest, publicError); recordErr != nil {
 			return chatCompletionResponse{}, recordErr
@@ -153,6 +163,19 @@ func (failover *nonStreamFailover) Execute(
 			MinimumAttemptWindow: failover.options.MinimumAttemptWindow,
 			AdditionalCost:       failover.options.AdditionalCost,
 		})
+		if decisionErr == nil {
+			if recordErr := recordRetryDecision(
+				executionContext, failover.decisions, recordedRequest.ID, attempt.AttemptNo, decision,
+			); recordErr != nil {
+				outcome := failedOutcomeWithKnownUsage(attemptErr, result)
+				if completionErr := completeRecordedAttempt(
+					executionContext, failover.recorder, recordedRequest, attempt, outcome,
+				); completionErr != nil {
+					return chatCompletionResponse{}, executionRecordPublicError(completionErr)
+				}
+				return chatCompletionResponse{}, executionRecordPublicError(recordErr)
+			}
+		}
 		if decisionErr != nil || decision.Action == retry.NoRetry {
 			outcome := failedOutcomeWithKnownUsage(attemptErr, result)
 			if recordErr := completeRecordedAttempt(executionContext, failover.recorder, recordedRequest, attempt, outcome); recordErr != nil {
@@ -181,9 +204,13 @@ func (failover *nonStreamFailover) Execute(
 			)
 		}
 		selection, err = failover.selectNext(
-			executionContext, selectionRequest, attemptedDeployments, decision.Action,
+			executionContext, selectionRequest, recordedRequest, attemptedDeployments, decision,
 		)
 		if err != nil {
+			if errors.Is(err, errRouteDecisionRecord) {
+				_ = failRecordedRequest(executionContext, failover.recorder, recordedRequest, execution.RequestFailed, "route_decision_record_unavailable")
+				return chatCompletionResponse{}, executionRecordPublicError(err)
+			}
 			if errors.Is(err, routing.ErrNoCandidate) {
 				if recordErr := failRecordedRequest(
 					executionContext, failover.recorder, recordedRequest,
@@ -208,22 +235,29 @@ func (failover *nonStreamFailover) Execute(
 func (failover *nonStreamFailover) selectNext(
 	ctx context.Context,
 	request routing.SelectionRequest,
+	recordedRequest execution.GatewayRequest,
 	attempted []string,
-	action retry.Action,
+	decision retry.Decision,
 ) (routing.Selection, error) {
 	request.ExcludedDeploymentIDs = append([]string(nil), attempted...)
-	selection, err := failover.selector.Select(ctx, cloneSelectionRequest(request))
+	selection, err := selectAndRecordRoute(
+		ctx, failover.selector, failover.decisions, recordedRequest.ID,
+		recordedRequest.AttemptCount+1, request, &decision,
+	)
 	if err == nil {
-		if action == retry.DifferentDeploymentOnly && containsDeployment(attempted, selection.Candidate.Deployment.ID) {
+		if decision.Action == retry.DifferentDeploymentOnly && containsDeployment(attempted, selection.Candidate.Deployment.ID) {
 			return routing.Selection{}, ErrFailoverInvalid
 		}
 		return selection, nil
 	}
-	if !errors.Is(err, routing.ErrNoCandidate) || action != retry.RetryAllowed {
+	if !errors.Is(err, routing.ErrNoCandidate) || decision.Action != retry.RetryAllowed {
 		return routing.Selection{}, err
 	}
 	request.ExcludedDeploymentIDs = nil
-	return failover.selector.Select(ctx, cloneSelectionRequest(request))
+	return selectAndRecordRoute(
+		ctx, failover.selector, failover.decisions, recordedRequest.ID,
+		recordedRequest.AttemptCount+1, request, &decision,
+	)
 }
 
 func failedOutcomeWithKnownUsage(err error, result adapter.NormalizedResponse) execution.AttemptOutcome {
