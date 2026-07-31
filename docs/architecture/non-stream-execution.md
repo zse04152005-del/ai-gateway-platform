@@ -16,6 +16,8 @@ Status: Implemented by P06-T05
 - `activehealth.AdapterProber` owns a separate one-token synthetic exchange for
   cold deployments. It never enters this production Attempt boundary, while
   `routing.CompositeHealth` combines its state with passive eligibility.
+- `gateway.CircuitChatExecutor` owns the final pre-execution circuit Permit and
+  result classification; `routing.CircuitBreaker` owns the state machine.
 
 The executor never queries the catalog again. Provider, Deployment, Binding, and LogicalModel come from the same selected catalog fact, avoiding a time-of-check/time-of-use split between routing and adapter construction.
 
@@ -42,3 +44,10 @@ would make synthetic traffic indistinguishable from production attempts and
 could contaminate usage, retries, route decisions, or request records. They use
 the same validated Adapter contract but a dedicated HTTP client, fixed request,
 finite result taxonomy, and independent tracker.
+
+The circuit wrapper sits outside `ObservedChatExecutor`. A rejected Open or
+saturated Half-Open reservation therefore produces no Provider call and no
+passive observation. Once acquired, the inner executor runs exactly once and
+the Permit completes from the same result. Permit completion uses a
+non-cancelled local context so caller cancellation can release in-flight state,
+but cancellation is classified as ignored provider-health evidence.

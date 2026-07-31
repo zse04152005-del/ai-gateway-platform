@@ -69,9 +69,10 @@ The probe has a dedicated hardened HTTP transport and connection pool. It does
 not traverse the public Gateway Handler, authentication, selection, retry,
 durable Request/Attempt recorder, metering pipeline, or passive observer. This
 provides application-accounting and network-pool isolation. Complete Provider
-quota/billing isolation still requires a dedicated Provider credential in the
-Secret Reference; the gateway does not claim that two requests using the same
-Provider account have separate external quotas.
+quota/billing isolation still requires a future dedicated probe-credential
+reference or a Provider-native unbilled health endpoint; the gateway does not
+claim that two requests using the same Provider account have separate external
+quotas.
 
 All failures collapse to one of: `timed_out`, `cancelled`,
 `adapter_unavailable`, `transport_failure`, `provider_failure`, or

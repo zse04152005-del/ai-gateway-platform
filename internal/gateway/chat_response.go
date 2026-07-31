@@ -11,6 +11,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 )
 
@@ -186,6 +187,10 @@ func tokenPointer(count adapter.TokenCount) *int64 {
 }
 
 func executionPublicError(err error) *apierror.Error {
+	if errors.Is(err, routing.ErrCircuitOpen) || errors.Is(err, routing.ErrHalfOpenSaturated) ||
+		errors.Is(err, routing.ErrCircuitCapacity) {
+		return newExecutionAPIError(http.StatusServiceUnavailable, "MODEL_UNAVAILABLE", "No healthy deployment is currently available", true, time.Second, err)
+	}
 	if errors.Is(err, context.Canceled) {
 		return newExecutionAPIError(clientClosedRequestStatus, "REQUEST_CANCELLED", "The request was cancelled", false, 0, err)
 	}

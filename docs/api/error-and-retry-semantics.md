@@ -63,6 +63,12 @@
 - 工具调用可能已产生副作用且没有幂等保证。
 - 总 Attempt、总时间或预算不足。
 
+### 3.1 熔断归因与并发探测
+
+P08-T05 已实现 Deployment 级 `Closed/Open/Half-Open`。只有可归因于 Provider 可用性的 429、容量、Timeout、5xx、协议和 Transport 故障进入失败阈值；Caller Cancellation、认证/权限、参数/上下文、内容策略和本地 Adapter 配置不触发熔断。
+
+Open 到期只表示可以尝试恢复，不表示 Provider 已恢复。Selector 的健康读取不占用名额；选中后在真实 Attempt 前原子获取 Half-Open Permit，默认最多 2 个并发。Permit 带状态 Generation 且只能完成一次，旧 Generation 的迟到成功不能关闭刚刚重新 Open 的 Circuit。Open、Half-Open 饱和或状态容量不足对客户端统一映射为可重试 503 `MODEL_UNAVAILABLE`。
+
 ## 4. 首包定义
 
 首包不是 HTTP 响应头，也不是 Gateway heartbeat。只有第一个客户端可见的模型内容、推理内容或工具调用 delta 才视为模型首包。

@@ -141,7 +141,11 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create active health tracker: %w", err)
 	}
-	combinedHealth, err := routing.NewCompositeHealth(passiveHealth, activeHealthTracker)
+	circuitBreaker, err := routing.NewCircuitBreaker(routing.DefaultCircuitOptions(), time.Now)
+	if err != nil {
+		return fmt.Errorf("create deployment circuit breaker: %w", err)
+	}
+	combinedHealth, err := routing.NewCompositeHealth(passiveHealth, activeHealthTracker, circuitBreaker)
 	if err != nil {
 		return fmt.Errorf("create composite route health: %w", err)
 	}
@@ -160,6 +164,10 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	observedChatExecutor, err := gateway.NewObservedChatExecutor(chatExecutor, passiveHealth, time.Now)
 	if err != nil {
 		return fmt.Errorf("create observed chat executor: %w", err)
+	}
+	circuitChatExecutor, err := gateway.NewCircuitChatExecutor(observedChatExecutor, circuitBreaker)
+	if err != nil {
+		return fmt.Errorf("create circuit chat executor: %w", err)
 	}
 	executionRecorder, err := execution.NewPostgresRecorder(database, time.Now, rand.Reader)
 	if err != nil {
@@ -181,7 +189,7 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 		return fmt.Errorf("create active health scheduler: %w", err)
 	}
 	applicationHandler, err := gateway.NewExecutableHandler(
-		authenticator, modelCatalog, routeSelector, observedChatExecutor, executionRecorder,
+		authenticator, modelCatalog, routeSelector, circuitChatExecutor, executionRecorder,
 	)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)

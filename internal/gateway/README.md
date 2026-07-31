@@ -8,4 +8,6 @@
 
 P08-T03 用 `ObservedChatExecutor` 包装真实非流式 Attempt，并把终态分类为成功、429、5xx、Provider Timeout、Caller Cancellation 或 Other Failure，连同总延迟写入进程级 `routing.PassiveHealth`。记录使用 `context.WithoutCancel`，因此客户端取消后仍可完成本地统计；观察失败只增加本地 Failure Counter，不得篡改已经产生的 Provider Response/Error。非流式路径不把完整响应延迟冒充 TTFT，真实 First Token 指标由流式 Attempt 在获得首模型事件时写入同一 Observation Contract。
 
+P08-T05 的 `CircuitChatExecutor` 位于 `ObservedChatExecutor` 外层，在真正调用 Provider 前原子获取 Deployment Circuit Permit。Open 或 Half-Open 并发已满时不会调用下层，也不会污染被动健康；公开响应统一为 503 `MODEL_UNAVAILABLE`，不暴露熔断状态。已获得 Permit 的真实结果按有限分类完成：成功推进恢复，429/临时容量/Timeout/5xx/协议或 Transport 故障计为失败，Caller Cancellation、认证、权限、参数、上下文和本地 Adapter 配置故障只释放 Permit 而不惩罚 Provider。完成记录失败只增加本地 Counter，不篡改业务响应。
+
 其他未实现业务端点返回安全 JSON 404。非 `/v1/*` 未知路径不触发数据库认证，避免扫描流量消耗认证资源。

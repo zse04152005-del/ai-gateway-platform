@@ -84,6 +84,23 @@ resume automatically when passive samples expire. Cancellation and local
 configuration/protocol failures do not suppress a probe because they are not
 provider-health samples.
 
+P08-T05 adds a third independent signal, `CircuitBreaker`, with a versioned
+`closed → open → half_open → closed` state machine. Closed opens after five
+consecutive attributable Provider failures; a success resets the consecutive
+counter, while caller cancellation and local/auth/request failures are ignored.
+Open denies selection for 30 seconds. Expiry moves the record to half-open,
+where routing advertises availability only while a slot may exist and the
+Attempt executor performs the authoritative atomic reservation.
+
+Half-open defaults to two concurrent permits and requires two successful
+completions. Any attributable failure immediately reopens with a new cooldown.
+Permits carry the state Generation and complete exactly once; late completions
+from an older Generation are ignored so they cannot close a re-opened circuit
+or underflow current in-flight accounting. The bounded map evicts only idle
+Closed entries. If all 10,000 entries are Open, Half-Open, or in flight, new
+state allocation fails closed with `ErrCircuitCapacity` rather than forgetting
+an unhealthy deployment.
+
 Catalog records are structurally and relationally validated before policy
 evaluation, without treating a valid disabled status or a policy mismatch as
 corrupt data. Cross-tenant facts, broken relationships, duplicate deployment

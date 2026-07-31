@@ -154,6 +154,9 @@ func TestExecutionPublicErrorMapsStableProviderCategories(t *testing.T) {
 		{name: "transport timeout", err: errors.Join(proxy.ErrTransport, upstreamhttp.ErrTimeout), wantStatus: http.StatusGatewayTimeout, wantCode: "PROVIDER_TIMEOUT"},
 		{name: "protocol", err: errors.Join(proxy.ErrProtocol, errors.New("private response body marker")), wantStatus: http.StatusBadGateway, wantCode: "PROVIDER_PROTOCOL_ERROR"},
 		{name: "cancelled", err: errors.Join(proxy.ErrTransport, context.Canceled), wantStatus: clientClosedRequestStatus, wantCode: "REQUEST_CANCELLED"},
+		{name: "circuit open", err: routing.ErrCircuitOpen, wantStatus: http.StatusServiceUnavailable, wantCode: "MODEL_UNAVAILABLE"},
+		{name: "half-open saturated", err: routing.ErrHalfOpenSaturated, wantStatus: http.StatusServiceUnavailable, wantCode: "MODEL_UNAVAILABLE"},
+		{name: "circuit capacity", err: routing.ErrCircuitCapacity, wantStatus: http.StatusServiceUnavailable, wantCode: "MODEL_UNAVAILABLE"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

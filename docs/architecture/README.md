@@ -16,5 +16,6 @@
 - [`upstream-http-client.md`](upstream-http-client.md)：进程级 Provider Client、分层超时、连接池和出站 Header 信任边界。
 - [`non-stream-execution.md`](non-stream-execution.md)：Selection→Adapter→HTTP→Normalized Response 的单 Attempt 边界与错误隔离。
 - [`active-health-checks.md`](active-health-checks.md)：冷路由低成本探针、连接池/计费隔离、抖动调度与迟滞恢复。
+- [`circuit-breaker.md`](circuit-breaker.md)：Closed/Open/Half-Open、Generation Permit、并发探测和错误归因。
 - [`gateway-execution-records.md`](gateway-execution-records.md)：GatewayRequest/RouteAttempt 事实边界、状态机、CAS、追加式证据与 fail-closed 调用顺序。
 - [`stream-cancellation.md`](stream-cancellation.md)：客户端取消到 Adapter/Body/Provider Context 的传播、释放证据和泄漏回归边界。

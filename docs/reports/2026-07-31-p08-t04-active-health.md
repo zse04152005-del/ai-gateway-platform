@@ -20,7 +20,7 @@
 
 探针使用真实 Adapter/Secret Reference 解析路径，但请求内容固定为 `ping`、`temperature=0`、`max_output_tokens=1`，不携带 Tenant、Project、Virtual Key、Tools、媒体、Provider Options 或用户数据，并带 `X-AI-Gateway-Traffic-Class: active-health/v1`。
 
-Gateway 为探针创建独立 HTTP Transport/连接池，每 Host 最多 2 个连接；探针不进入公开 Handler、认证、业务 Selection、重试、GatewayRequest/RouteAttempt、计费事件或被动观察器。由此隔离应用记账和连接池资源。若企业要求 Provider 账户层的额度/账单也完全隔离，仍须给 Probe Secret Reference 使用专用供应商凭据；当前实现明确记录该边界，不把同一 Provider 账户虚假描述为独立配额。
+Gateway 为探针创建独立 HTTP Transport/连接池，每 Host 最多 2 个连接；探针不进入公开 Handler、认证、业务 Selection、重试、GatewayRequest/RouteAttempt、计费事件或被动观察器。由此隔离应用记账和连接池资源。若企业要求 Provider 账户层的额度/账单也完全隔离，仍须后续增加专用 Probe Credential Reference 或接入供应商原生无计费健康端点；当前实现明确记录该边界，不把同一 Provider 账户虚假描述为独立配额。
 
 ## 4. 状态迟滞与故障包含
 
