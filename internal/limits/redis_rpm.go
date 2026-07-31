@@ -2,6 +2,7 @@ package limits
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"regexp"
@@ -402,6 +403,15 @@ func redisRPMField(scope Scope) string {
 	default:
 		return ""
 	}
+}
+
+func redisScopeFingerprint(scopes [requiredScopeCount]Scope) string {
+	fields := make([]string, 0, requiredScopeCount)
+	for _, scope := range scopes {
+		fields = append(fields, redisRPMField(scope))
+	}
+	digest := sha256.Sum256([]byte(strings.Join(fields, "\x00")))
+	return fmt.Sprintf("%x", digest)
 }
 
 func validRedisRPMKeyPrefix(prefix string) bool {

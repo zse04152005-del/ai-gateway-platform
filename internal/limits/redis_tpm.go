@@ -2,7 +2,6 @@ package limits
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"regexp"
@@ -186,7 +185,7 @@ func (limiter *RedisTPMLimiter) ReserveTPM(
 		return RedisTPMReservation{}, err
 	}
 	window := limiter.now().UTC().Unix() / redisTPMWindowSeconds
-	fingerprint := redisTPMScopeFingerprint(scopes)
+	fingerprint := redisScopeFingerprint(scopes)
 	for range limiter.clockRetries {
 		key := limiter.windowKey(window)
 		arguments := redisTPMReserveArguments(
@@ -243,7 +242,7 @@ func (limiter *RedisTPMLimiter) SettleTPM(
 		return RedisTPMSettlement{}, err
 	}
 	key := limiter.windowKey(handle.Window)
-	fingerprint := redisTPMScopeFingerprint(scopes)
+	fingerprint := redisScopeFingerprint(scopes)
 	arguments := redisTPMSettleArguments(handle, actual, fingerprint, scopes)
 	raw, evalErr := limiter.evaluator.Eval(ctx, redisTPMSettleScript, []string{key}, arguments...)
 	if evalErr != nil {
@@ -597,15 +596,6 @@ func validateRedisTPMHandle(handle RedisTPMHandle) ([requiredScopeCount]Scope, e
 
 func (limiter *RedisTPMLimiter) windowKey(window int64) string {
 	return limiter.keyPrefix + ":" + strconv.FormatInt(window, 10)
-}
-
-func redisTPMScopeFingerprint(scopes [requiredScopeCount]Scope) string {
-	fields := make([]string, 0, requiredScopeCount)
-	for _, scope := range scopes {
-		fields = append(fields, redisRPMField(scope))
-	}
-	digest := sha256.Sum256([]byte(strings.Join(fields, "\x00")))
-	return fmt.Sprintf("%x", digest)
 }
 
 func redisTPMReservationField(reservationID string) string {

@@ -29,3 +29,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `non_stream_e2e_test.go` 贯通真实 HTTP Server、Key 签发/认证、PostgreSQL Catalog/路由/执行记录、Mock Adapter、共享上游 Client 和真实 Mock Provider，覆盖成功、认证失败、未知模型、超时、429、5xx 与客户端取消，并核对 Request/Attempt 终态、Header 事实和追加式事件；CI PostgreSQL Job 强制执行。
 - `redis_rpm_test.go` 在真实 Redis 7.4 上以 128 路并发验证 Platform/Tenant/Project/Key 四层 Lua 的全有或全无计数、服务器分钟边界纠正、绝对 TTL、soft 事实、hard 拒绝和损坏计数 fail closed；CI migration-integration Job 强制执行。
 - `redis_tpm_test.go` 在真实 Redis 7.4 上以 64 路并发验证四层 TPM 最大量预留严格不超 hard、相同 ID 幂等、并发结算释放差额、实际超额补记并阻止后续 admission、绝对 TTL 不滑动，以及过期/冲突/损坏状态 fail closed；CI migration-integration Job 强制执行。
+- `redis_concurrency_test.go` 在真实 Redis 7.4 上以 64 路并发验证四层 ZSET Lease hard 不超卖、soft/最早过期事实、幂等 Acquire/Release、长请求 Renew、正常/失败/取消显式清理、模拟进程退出后的自动过期恢复，以及损坏成员无部分释放；CI migration-integration Job 强制执行。

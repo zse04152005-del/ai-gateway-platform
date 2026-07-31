@@ -24,5 +24,6 @@
 - [`local-fast-limiter.md`](local-fast-limiter.md)：Platform/Tenant/Project/Key 四层原子 admission、分钟窗口、并发 Lease 和配置热更新。
 - [`redis-rpm-limiter.md`](redis-rpm-limiter.md)：Redis TIME 权威分钟、四层单 Hash Lua 原子计数、绝对 TTL 和时钟边界重试。
 - [`tpm-reservation-settlement.md`](tpm-reservation-settlement.md)：版本化输入估算、输入加最大输出预留、原分钟幂等结算、差额释放与超额补记。
+- [`distributed-concurrency-limiter.md`](distributed-concurrency-limiter.md)：四层同 Slot ZSET Lease、显式释放、心跳续租、进程退出过期恢复和 Scope 指纹。
 - [`gateway-execution-records.md`](gateway-execution-records.md)：GatewayRequest/RouteAttempt 事实边界、状态机、CAS、追加式证据与 fail-closed 调用顺序。
 - [`stream-cancellation.md`](stream-cancellation.md)：客户端取消到 Adapter/Body/Provider Context 的传播、释放证据和泄漏回归边界。
