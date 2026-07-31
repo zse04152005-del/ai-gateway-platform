@@ -69,3 +69,17 @@ These fields contain no endpoint, content, client cause text, or Provider respon
 - a hard 1～32 Attempt bound is enforced here; P08 adds total-time, retry taxonomy, budget and routing policy outside this semantic guard.
 
 `Forward` serializes client events and deep-copies each Chunk. The gate snapshot exposes only Attempt counts, model-output state, forwarded event counts and denial counts; it contains no model content, Provider error or Deployment ID.
+
+## Streaming Usage aggregation
+
+`UsageAggregator` consumes the complete normalized Chunk sequence and keeps three non-collapsed tracks:
+
+1. Provider terminal Usage (`provider_final`);
+2. Provider cumulative Chunk Usage (`provider_chunks`);
+3. Gateway-local fallback (`local_estimate`).
+
+The effective precedence is terminal Provider fact, then the latest validated Provider Chunk fact, then local estimate. No available source is relabelled as another source, and missing Usage stays nil instead of becoming zero.
+
+Every normalized `usage_delta` is an Attempt-to-date cumulative lower-bound snapshot, not an additive increment. Once a meter becomes present, later Chunk/terminal snapshots must keep it present and non-decreasing. A regression is rejected without mutating the last trusted aggregate, preventing repeated prompt counts from being summed and preventing a smaller terminal bill from silently replacing observed usage. The latest exact `NormalizedUsage` and immutable RawEvidence remain paired; the aggregator does not synthesize Provider evidence.
+
+The aggregator enforces increasing stream Sequence, a configurable 1～1,000,000 usage-event limit, one local estimate, and terminal closure. Snapshots preserve all three tracks but ordinary JSON serialization exposes only `UsageEvidence` hash/size metadata, never raw Provider JSON.

@@ -82,6 +82,8 @@ observed_at
 
 未知计费类型写入扩展并触发可观测告警；在价格映射明确前不得按 0 结算。
 
+流式 `usage_delta` 的 Token Count 统一表示当前 Attempt 截止该事件的累计下界快照，不表示“仅本 Chunk 新增量”。Adapter 必须在规范化层把供应商的增量或其他表示转换为累计快照；同一 meter 的 presence 只能增加、数值不得回退。Gateway 因此取最新单调快照而不是逐事件求和，避免重复累计 Input Token。终态 Provider Usage、Chunk 累计 Usage 和本地 Estimate 分轨保留，优先级为终态 Provider > Chunk Provider > Estimate；缺失始终区别于真实 0。
+
 ## 6. NormalizedError
 
 ```text
