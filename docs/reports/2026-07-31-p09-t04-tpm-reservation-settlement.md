@@ -2,7 +2,7 @@
 
 - 日期：2026-07-31
 - 范围：版本化输入估算、输入加最大输出预留、Redis 四层原子 TPM、原分钟终态结算
-- 本地结论：实现与专项门禁通过；远程提交和 GitHub Actions 证据待本任务闭环后回填
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 预估与口径
 
@@ -41,4 +41,4 @@ Key 使用版本化 `{tpm}` hash tag。`PEXPIREAT` 固定为原分钟 ResetAt �
 - 常规与 integration build tag 的 `go vet`、golangci-lint：0 issue；
 - `scripts/dev.ps1 -Action check`：模块校验、格式、双标签 lint、全量单测、构建、govulncheck、迁移顺序、Actions 语法和本地密钥扫描全部通过，迁移仍为 `count=10 latest=000010_create_limit_policies`。
 
-实现提交、GitHub Actions 三 Job 以及清单证据提交将在后续闭环步骤完成并回填。
+实现提交为 `83d3353`。GitHub Actions [`30630968242`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30630968242) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race 和 CI Redis 7.4 的 `TestRedisTPMAtomicReservationAndSettlement` 均明确通过。
