@@ -2,7 +2,7 @@
 
 - 日期：2026-07-31
 - 范围：RPM、TPM、并发，Platform/Tenant/Project/Key 继承，soft/hard 阈值
-- 结论：实现与本地完整门禁通过；远端门禁待实现提交后回填
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -45,4 +45,4 @@ Tenant、Project、VirtualKey 新增 `limit_policy_id`，全部通过 Tenant 复
 
 ## 5. 远端门禁
 
-待实现提交推送并等待 GitHub Actions 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿后回填提交和 run 证据。
+实现提交为 `af7277a`。GitHub Actions [`30626003112`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30626003112) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；其中 Linux `Unit tests with race detector` 和 PostgreSQL `10→9→10` 迁移生命周期均明确通过。

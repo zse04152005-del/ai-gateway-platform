@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P09-T01：定义 RPM/TPM/并发策略 Schema`
+`P09-T02：实现本地快速限流`
 
-数据面已交付认证后的严格 Chat 解析、无损规范化、Tenant/Project/Key 作用域选路、进程级安全 HTTP 连接池、真实 `mock`/`openai` Adapter 执行、数据库强约束的 Request/Attempt 生命周期和客户端取消传播。P08 已完成最多 3 次、统一 30 秒 Deadline 的有界故障切换：每次物理调用都有独立 Attempt 和 Usage 事实，每次候选过滤、策略评分、重选因果和终止型 retry 分类均可按 requestId 复盘；64 路并发全故障验证调用量严格为 `3N`、同请求始终串行，Deadline 与额外费用门禁不会被重试绕过。
+数据面已交付认证后的严格 Chat 解析、无损规范化、Tenant/Project/Key 作用域选路、进程级安全 HTTP 连接池、真实 `mock`/`openai` Adapter 执行、数据库强约束的 Request/Attempt 生命周期和客户端取消传播。P08 已完成最多 3 次、统一 30 秒 Deadline 的有界故障切换；P09-T01 已固定 RPM/TPM/并发的 Platform→Tenant→Project→Key 逐字段继承、soft/hard 语义、来源追踪、精确整数上限和 Tenant 强引用。下一步用统一解析后的 Effective 策略实现可热更新的单实例快速保护。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
