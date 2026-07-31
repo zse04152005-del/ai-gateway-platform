@@ -27,3 +27,4 @@
 - [P08-T03 被动健康统计](2026-07-31-p08-t03-passive-health.md)
 - [P08-T04 主动健康检查](2026-07-31-p08-t04-active-health.md)
 - [P08-T05 熔断状态机](2026-07-31-p08-t05-circuit-breaker.md)
+- [P08-T06 重试分类](2026-07-31-p08-t06-retry-classification.md)

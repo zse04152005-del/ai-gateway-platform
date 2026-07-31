@@ -69,6 +69,12 @@ P08-T05 已实现 Deployment 级 `Closed/Open/Half-Open`。只有可归因于 Pr
 
 Open 到期只表示可以尝试恢复，不表示 Provider 已恢复。Selector 的健康读取不占用名额；选中后在真实 Attempt 前原子获取 Half-Open Permit，默认最多 2 个并发。Permit 带状态 Generation 且只能完成一次，旧 Generation 的迟到成功不能关闭刚刚重新 Open 的 Circuit。Open、Half-Open 饱和或状态容量不足对客户端统一映射为可重试 503 `MODEL_UNAVAILABLE`。
 
+### 3.2 有限重试分类与预算
+
+P08-T06 使用 `retry-classifier/v1` 把失败判定为 `no_retry`、`retry_allowed` 或 `different_deployment_only`。判定只读取稳定类型和已验证的 `NormalizedError`，不解析 Provider Body 或错误字符串。认证、权限、参数、上下文、内容策略、Caller Cancellation/Deadline、未知错误和本地 Adapter 配置不重试；429、Capacity、Timeout 和临时 5xx 必须带可信 retryable 事实。
+
+所有可重试候选继续受最大 Attempt、额外费用许可、请求总 Deadline、下一 Attempt 最小窗口和 `Retry-After` 约束。已输出模型内容永不重试。Timeout、临时 5xx 和 Transport 在上游提交已发生或无法确认时只能更换 Deployment；Protocol 与首 Token 超时也只能更换 Deployment。完整矩阵和精确时间边界见 [`../architecture/retry-classification.md`](../architecture/retry-classification.md)。
+
 ## 4. 首包定义
 
 首包不是 HTTP 响应头，也不是 Gateway heartbeat。只有第一个客户端可见的模型内容、推理内容或工具调用 delta 才视为模型首包。
