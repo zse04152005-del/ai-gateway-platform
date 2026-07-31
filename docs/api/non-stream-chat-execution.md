@@ -60,7 +60,7 @@ Gateway 进程显式注册 `mock` 和 `openai` 两个 Adapter Factory。开发�
   },
   "gateway": {
     "request_id": "req_fixture",
-    "attempt_count": 1,
+    "attempt_count": 2,
     "usage_complete": true
   }
 }
@@ -110,8 +110,9 @@ Inbound HTTP Request、Gateway Handler、`NonStreamExecutor`、Adapter 构造/�
 
 自动化测试要求 Gateway 和真实 HTTP 上游均在取消后 1 秒内解除阻塞，并显式等待上游 Handler 收到取消，避免只验证客户端协程返回而遗漏连接泄漏。
 
-## 6. 当前限制
+## 6. 有界故障切换与当前限制
 
-- `stream=true` 明确返回 501 `CHAT_STREAMING_NOT_IMPLEMENTED`，由 P07 接通 SSE；不会把流式请求降级为普通响应。
-- 当前每个请求只有一次 Attempt，所以 `gateway.attempt_count=1`；该 Attempt 已持久化，P08 引入安全重试后再从真实尝试数投影。
-- Request/Attempt 生命周期已经持久化并由数据库约束；P06-T08 将补齐完整非流式 HTTP 端到端场景矩阵。
+- `gateway.attempt_count` 是本次客户端响应实际触发的物理 Attempt 数，默认最大 3；示例中的 2 表示第一次失败后成功切换。
+- 每个 Attempt 都独立持久化 Deployment、状态、结束原因和已知 Usage。公共 `usage` 描述最终成功响应，P10 再聚合全部 Attempt 的真实费用。
+- 请求总时限覆盖路由、`Retry-After` 等待和所有 Attempt；认证、参数、内容拒绝、取消、预算不足或已开始客户端输出均停止切换。
+- `stream=true` 仍明确返回 501 `CHAT_STREAMING_NOT_IMPLEMENTED`，不会把流式请求降级为普通响应；流式不可逆边界已有 P07 组件验证，但公开传输接线不在本非流式契约内。

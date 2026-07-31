@@ -109,7 +109,12 @@ func (problem *requestProblem) publicError() *apierror.Error {
 	}, nil)
 }
 
-func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecutor, recorder execution.Recorder) http.Handler {
+func newChatCompletionsHandler(
+	routeSelector RouteSelector,
+	executor ChatExecutor,
+	recorder execution.Recorder,
+	failover *nonStreamFailover,
+) http.Handler {
 	methodError := newRequestProblem(
 		http.StatusMethodNotAllowed,
 		"METHOD_NOT_ALLOWED",
@@ -154,15 +159,14 @@ func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecuto
 				return
 			}
 		}
-		selection, err := selectInitialRoute(request, normalized, routeSelector)
-		if err != nil {
-			if recorder != nil {
-				err = finalizeRequestFailure(request.Context(), recorder, recordedRequest, err)
-			}
-			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
-			return
-		}
 		if executor == nil {
+			if _, err = selectInitialRoute(request, normalized, routeSelector); err != nil {
+				if recorder != nil {
+					err = finalizeRequestFailure(request.Context(), recorder, recordedRequest, err)
+				}
+				apierror.WriteHTTP(writer, err, requestID, "gateway_error")
+				return
+			}
 			if recorder != nil {
 				if recordErr := failRecordedRequest(request.Context(), recorder, recordedRequest, execution.RequestFailed, "execution_not_implemented"); recordErr != nil {
 					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
@@ -173,6 +177,13 @@ func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecuto
 			return
 		}
 		if normalized.ProviderRequest.Stream {
+			if _, err = selectInitialRoute(request, normalized, routeSelector); err != nil {
+				if recorder != nil {
+					err = finalizeRequestFailure(request.Context(), recorder, recordedRequest, err)
+				}
+				apierror.WriteHTTP(writer, err, requestID, "gateway_error")
+				return
+			}
 			if recorder != nil {
 				if recordErr := failRecordedRequest(request.Context(), recorder, recordedRequest, execution.RequestFailed, "streaming_not_implemented"); recordErr != nil {
 					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
@@ -182,50 +193,25 @@ func newChatCompletionsHandler(routeSelector RouteSelector, executor ChatExecuto
 			apierror.WriteHTTP(writer, streamingNotImplemented, requestID, "gateway_error")
 			return
 		}
-		var recordedAttempt execution.RouteAttempt
-		if recorder != nil {
-			updatedRequest, startedAttempt, startErr := recorder.StartAttempt(
-				request.Context(), recordedRequest, selection.Candidate.Deployment.ID,
-			)
-			if startErr != nil {
-				_ = failRecordedRequest(request.Context(), recorder, recordedRequest, execution.RequestFailed, "attempt_record_unavailable")
-				apierror.WriteHTTP(writer, executionRecordPublicError(startErr), requestID, "gateway_error")
-				return
-			}
-			recordedRequest, recordedAttempt = updatedRequest, startedAttempt
-		}
-		result, err := executor.Execute(request.Context(), selection, normalized.ProviderRequest.Clone())
+		selectionRequest, err := routeSelectionRequest(request, normalized)
 		if err != nil {
 			if recorder != nil {
-				if recordErr := completeRecordedAttempt(request.Context(), recorder, recordedRequest, recordedAttempt, attemptOutcomeForError(err)); recordErr != nil {
-					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
-					return
-				}
+				err = finalizeRequestFailure(request.Context(), recorder, recordedRequest, err)
 			}
-			apierror.WriteHTTP(writer, executionPublicError(err), requestID, "gateway_error")
+			apierror.WriteHTTP(writer, err, requestID, "gateway_error")
 			return
 		}
-		response, err := projectChatCompletion(result, normalized.ProviderRequest.LogicalModel, requestID)
+		if failover == nil {
+			apierror.WriteHTTP(writer, executionPublicError(ErrFailoverInvalid), requestID, "gateway_error")
+			return
+		}
+		response, err := failover.Execute(
+			request.Context(), selectionRequest, recordedRequest,
+			normalized.ProviderRequest.Clone(), requestID,
+		)
 		if err != nil {
-			if recorder != nil {
-				if recordErr := completeRecordedAttempt(request.Context(), recorder, recordedRequest, recordedAttempt, attemptOutcomeForError(err)); recordErr != nil {
-					apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
-					return
-				}
-			}
-			apierror.WriteHTTP(writer, executionPublicError(err), requestID, "gateway_error")
+			apierror.WriteHTTP(writer, chatExecutionPublicError(err), requestID, "gateway_error")
 			return
-		}
-		if recorder != nil {
-			outcome := execution.AttemptOutcome{
-				AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
-				HeadersReceived: true, EndReason: "completed", ProviderRequestID: result.ProviderRequestID,
-				Usage: result.Usage,
-			}
-			if recordErr := completeRecordedAttempt(request.Context(), recorder, recordedRequest, recordedAttempt, outcome); recordErr != nil {
-				apierror.WriteHTTP(writer, executionRecordPublicError(recordErr), requestID, "gateway_error")
-				return
-			}
 		}
 		writeChatCompletionJSON(writer, response, requestID)
 	})
@@ -239,28 +225,54 @@ func selectInitialRoute(
 	if routeSelector == nil {
 		return routing.Selection{}, routeUnavailable(errors.New("route selector is not configured"))
 	}
+	selectionRequest, err := routeSelectionRequest(request, normalized)
+	if err != nil {
+		return routing.Selection{}, err
+	}
+	selection, err := routeSelector.Select(request.Context(), selectionRequest)
+	if err != nil {
+		return routing.Selection{}, routeSelectionPublicError(err)
+	}
+	return selection, nil
+}
+
+func routeSelectionRequest(
+	request *http.Request,
+	normalized normalizedChatRequest,
+) (routing.SelectionRequest, error) {
+	if request == nil {
+		return routing.SelectionRequest{}, routeUnavailable(errors.New("HTTP request is missing"))
+	}
 	principal, ok := keyauth.PrincipalFromContext(request.Context())
 	if !ok {
-		return routing.Selection{}, routeUnavailable(errors.New("trusted authentication principal is missing"))
+		return routing.SelectionRequest{}, routeUnavailable(errors.New("trusted authentication principal is missing"))
 	}
-	selection, err := routeSelector.Select(request.Context(), routing.SelectionRequest{
+	return routing.SelectionRequest{
 		Access: catalog.Access{
 			TenantID: principal.TenantID, ProjectID: principal.ProjectID,
 			KeyAllowedModels: principal.AllowedModels,
 		},
 		Request: normalized.ProviderRequest.Clone(),
-	})
-	if err == nil {
-		return selection, nil
-	}
+	}, nil
+}
+
+func routeSelectionPublicError(err error) error {
 	if errors.Is(err, routing.ErrNoCandidate) {
-		return routing.Selection{}, apierror.MustNew(apierror.Definition{
+		return apierror.MustNew(apierror.Definition{
 			Status: http.StatusServiceUnavailable, Code: "MODEL_UNAVAILABLE",
 			Message: "No compatible healthy deployment is available", Type: "gateway_error",
 			Param: "model", Retryable: true, RetryAfter: time.Second,
 		}, err)
 	}
-	return routing.Selection{}, routeUnavailable(err)
+	return routeUnavailable(err)
+}
+
+func chatExecutionPublicError(err error) error {
+	var publicError *apierror.Error
+	if errors.As(err, &publicError) {
+		return publicError
+	}
+	return executionPublicError(err)
 }
 
 func routeUnavailable(cause error) *apierror.Error {

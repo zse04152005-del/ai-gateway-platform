@@ -101,6 +101,13 @@ Closed entries. If all 10,000 entries are Open, Half-Open, or in flight, new
 state allocation fails closed with `ErrCircuitCapacity` rather than forgetting
 an unhealthy deployment.
 
+P08-T07 adds request-scoped `ExcludedDeploymentIDs` to selection. The list is
+bounded to 32 canonical unique UUIDs and is evaluated after catalog status but
+before health, budget, or capacity dependencies. An excluded candidate records
+the finite reason `previously_attempted`. Different-Deployment failover cannot
+silently return an old target; ordinary retry first seeks another candidate and
+may remove exclusions only when policy explicitly permits same-target retry.
+
 Catalog records are structurally and relationally validated before policy
 evaluation, without treating a valid disabled status or a policy mismatch as
 corrupt data. Cross-tenant facts, broken relationships, duplicate deployment

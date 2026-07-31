@@ -113,6 +113,76 @@ func TestGatewayExecutionLifecycle(t *testing.T) {
 		expectExecutionSQLState(t, err, "23514")
 	})
 
+	t.Run("retry keeps request running and preserves every attempt usage", func(t *testing.T) {
+		requestID := "integration-execution-multi-attempt"
+		request := startExecutionRequest(ctx, t, recorder, requestID)
+		running, err := recorder.MarkRouting(ctx, request)
+		if err != nil {
+			t.Fatalf("MarkRouting(multi-attempt) error = %v", err)
+		}
+		running, firstAttempt, err := recorder.StartAttempt(ctx, running, modelListDeploymentAID)
+		if err != nil {
+			t.Fatalf("StartAttempt(first) error = %v", err)
+		}
+		firstUsage := adapter.NormalizedUsage{
+			InputTokens: adapter.Tokens(8), OutputTokens: adapter.Tokens(1),
+			Source: adapter.UsageSourceEstimated, Complete: false,
+		}
+		completedFirst, err := recorder.CompleteAttemptForRetry(ctx, running, firstAttempt, execution.AttemptOutcome{
+			AttemptStatus: execution.AttemptRetryableFailed, RequestStatus: execution.RequestRunning,
+			HeadersReceived: true, EndReason: "provider_capacity", ProviderRequestID: "provider/attempt-1",
+			ErrorCategory: string(adapter.ErrorCapacity), ErrorCode: "PROVIDER_CAPACITY", Usage: &firstUsage,
+		})
+		if err != nil {
+			t.Fatalf("CompleteAttemptForRetry() error = %v", err)
+		}
+		if completedFirst.Status != execution.AttemptRetryableFailed || completedFirst.AttemptNo != 1 ||
+			completedFirst.HeadersReceivedAt == nil || len(completedFirst.UsageSummary) == 0 {
+			t.Fatalf("completed first attempt = %+v", completedFirst)
+		}
+
+		running, secondAttempt, err := recorder.StartAttempt(ctx, running, modelListDeploymentBID)
+		if err != nil {
+			t.Fatalf("StartAttempt(second) error = %v", err)
+		}
+		secondUsage := adapter.NormalizedUsage{
+			InputTokens: adapter.Tokens(8), OutputTokens: adapter.Tokens(5),
+			Source: adapter.UsageSourceEstimated, Complete: false,
+		}
+		completedRequest, completedSecond, err := recorder.CompleteAttempt(ctx, running, secondAttempt, execution.AttemptOutcome{
+			AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
+			HeadersReceived: true, EndReason: "completed", ProviderRequestID: "provider/attempt-2",
+			Usage: &secondUsage,
+		})
+		if err != nil {
+			t.Fatalf("CompleteAttempt(second) error = %v", err)
+		}
+		if completedRequest.Status != execution.RequestSucceeded || completedRequest.AttemptCount != 2 ||
+			completedRequest.Version != 5 || completedSecond.AttemptNo != 2 ||
+			completedSecond.DeploymentID != modelListDeploymentBID {
+			t.Fatalf("multi-attempt terminal = request=%+v attempt=%+v", completedRequest, completedSecond)
+		}
+
+		assertExecutionEvents(ctx, t, database, requestID, completedFirst.ID,
+			[]string{"authorized", "routing", "running", "running", "succeeded"},
+			[]string{"created", "connecting", "headers_received", "retryable_failed"},
+		)
+		assertExecutionEvents(ctx, t, database, requestID, completedSecond.ID,
+			[]string{"authorized", "routing", "running", "running", "succeeded"},
+			[]string{"created", "connecting", "headers_received", "succeeded"},
+		)
+		var totalAttempts, attemptsWithUsage int
+		if err := database.QueryRowContext(ctx, `
+			SELECT count(*), count(*) FILTER (WHERE usage_summary IS NOT NULL)
+			FROM app.route_attempts WHERE request_id = $1`, requestID,
+		).Scan(&totalAttempts, &attemptsWithUsage); err != nil {
+			t.Fatalf("query multi-attempt usage evidence: %v", err)
+		}
+		if totalAttempts != 2 || attemptsWithUsage != 2 {
+			t.Fatalf("attempt/usage counts = %d/%d", totalAttempts, attemptsWithUsage)
+		}
+	})
+
 	t.Run("provider failure and database conflicts stay explicit", func(t *testing.T) {
 		request := startExecutionRequest(ctx, t, recorder, executionFailureRequestID)
 		routed, err := recorder.MarkRouting(ctx, request)

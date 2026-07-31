@@ -10,4 +10,6 @@ P08-T03 用 `ObservedChatExecutor` 包装真实非流式 Attempt，并把终态�
 
 P08-T05 的 `CircuitChatExecutor` 位于 `ObservedChatExecutor` 外层，在真正调用 Provider 前原子获取 Deployment Circuit Permit。Open 或 Half-Open 并发已满时不会调用下层，也不会污染被动健康；公开响应统一为 503 `MODEL_UNAVAILABLE`，不暴露熔断状态。已获得 Permit 的真实结果按有限分类完成：成功推进恢复，429/临时容量/Timeout/5xx/协议或 Transport 故障计为失败，Caller Cancellation、认证、权限、参数、上下文和本地 Adapter 配置故障只释放 Permit 而不惩罚 Provider。完成记录失败只增加本地 Counter，不篡改业务响应。
 
+P08-T07 为非流式生产请求增加有界故障切换：默认最多 3 个物理 Attempt、30 秒统一总时限和 250ms 下一 Attempt 最小窗口。失败 Attempt 先独立落库并保持父 Request running，再排除已尝试 Deployment 重选；普通 retry 无备用时才允许同一固定目标，different-only 永不回退旧目标。公共响应在最终投影和终态落库前不写字节，`gateway.attempt_count` 返回真实尝试数；所有 Attempt 的已知 Usage 独立保留给 P10 聚合。
+
 其他未实现业务端点返回安全 JSON 404。非 `/v1/*` 未知路径不触发数据库认证，避免扫描流量消耗认证资源。

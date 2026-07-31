@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/apierror"
@@ -52,7 +53,7 @@ func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog, selector
 		}
 		routeSelector = selectors[0]
 	}
-	return newHandler(authenticator, modelCatalog, routeSelector, nil, nil), nil
+	return newHandler(authenticator, modelCatalog, routeSelector, nil, nil, nil), nil
 }
 
 // NewExecutableHandler requires the complete non-streaming execution chain.
@@ -62,6 +63,20 @@ func NewExecutableHandler(
 	routeSelector RouteSelector,
 	executor ChatExecutor,
 	recorder execution.Recorder,
+) (http.Handler, error) {
+	return NewExecutableHandlerWithFailover(
+		authenticator, modelCatalog, routeSelector, executor, recorder, DefaultFailoverOptions(),
+	)
+}
+
+// NewExecutableHandlerWithFailover installs an explicit request-wide failover envelope.
+func NewExecutableHandlerWithFailover(
+	authenticator Authenticator,
+	modelCatalog ModelCatalog,
+	routeSelector RouteSelector,
+	executor ChatExecutor,
+	recorder execution.Recorder,
+	options FailoverOptions,
 ) (http.Handler, error) {
 	if authenticator == nil {
 		return nil, errors.New("gateway authenticator must not be nil")
@@ -78,7 +93,13 @@ func NewExecutableHandler(
 	if recorder == nil {
 		return nil, errors.New("gateway execution recorder must not be nil")
 	}
-	return newHandler(authenticator, modelCatalog, routeSelector, executor, recorder), nil
+	failover, err := newNonStreamFailover(
+		routeSelector, executor, recorder, options, time.Now, defaultRetryWaiter,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(authenticator, modelCatalog, routeSelector, executor, recorder, failover), nil
 }
 
 func newHandler(
@@ -87,6 +108,7 @@ func newHandler(
 	routeSelector RouteSelector,
 	executor ChatExecutor,
 	recorder execution.Recorder,
+	failover *nonStreamFailover,
 ) http.Handler {
 	notFound := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		apierror.WriteHTTP(writer, apierror.MustNew(apierror.Definition{
@@ -96,7 +118,7 @@ func newHandler(
 	})
 	mux := http.NewServeMux()
 	mux.Handle("/v1/models", authenticator.Middleware(newModelsHandler(modelCatalog)))
-	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector, executor, recorder)))
+	mux.Handle("/v1/chat/completions", authenticator.Middleware(newChatCompletionsHandler(routeSelector, executor, recorder, failover)))
 	mux.Handle("/v1/", authenticator.Middleware(notFound))
 	mux.Handle("/", notFound)
 	return mux

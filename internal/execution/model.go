@@ -160,8 +160,10 @@ func (outcome AttemptOutcome) Validate() error {
 			return ErrInvalid
 		}
 	case AttemptRetryableFailed, AttemptFailed:
-		if outcome.RequestStatus != RequestFailed || !categoryPattern.MatchString(outcome.ErrorCategory) ||
-			!errorCodePattern.MatchString(outcome.ErrorCode) || outcome.Usage != nil {
+		validRequestStatus := outcome.RequestStatus == RequestFailed ||
+			(outcome.AttemptStatus == AttemptRetryableFailed && outcome.RequestStatus == RequestRunning)
+		if !validRequestStatus || !categoryPattern.MatchString(outcome.ErrorCategory) ||
+			!errorCodePattern.MatchString(outcome.ErrorCode) {
 			return ErrInvalid
 		}
 	case AttemptPartialFailed:

@@ -633,6 +633,8 @@ components:
         attempt_count:
           type: integer
           minimum: 1
+          maximum: 32
+          description: Actual number of independently recorded physical provider attempts.
         route_policy_version:
           type: integer
           format: int64

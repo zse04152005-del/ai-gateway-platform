@@ -9,7 +9,10 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 )
 
-const candidateFilterPolicyVersion = "candidate-filter/v1"
+const (
+	candidateFilterPolicyVersion = "candidate-filter/v1"
+	maximumExcludedDeployments   = 32
+)
 
 var (
 	// ErrBudgetUnavailable means the budget dependency could not decide safely.
@@ -32,6 +35,8 @@ const (
 	FilterRegionNotAllowed FilterReason = "region_not_allowed"
 	// FilterInactive means at least one catalog record is disabled.
 	FilterInactive FilterReason = "inactive"
+	// FilterPreviouslyAttempted means request-scoped failover excludes this deployment.
+	FilterPreviouslyAttempted FilterReason = "previously_attempted"
 	// FilterUnhealthy means the current health view rejects the deployment.
 	FilterUnhealthy FilterReason = "unhealthy"
 	// FilterBudgetDenied means the request is outside its current budget envelope.
@@ -139,7 +144,12 @@ func (filter *CandidateFilter) Filter(ctx context.Context, request SelectionRequ
 	if err := request.Request.Validate(); err != nil {
 		return result, fmt.Errorf("validate route request: %w", err)
 	}
+	excluded, err := excludedDeploymentSet(request.ExcludedDeploymentIDs)
+	if err != nil {
+		return result, err
+	}
 	request.Access.KeyAllowedModels = cloneStrings(request.Access.KeyAllowedModels)
+	request.ExcludedDeploymentIDs = append([]string(nil), request.ExcludedDeploymentIDs...)
 	candidates, err := filter.source.ListRouteCandidates(ctx, catalog.RouteQuery{
 		Access: request.Access, LogicalModel: request.Request.LogicalModel,
 	})
@@ -167,7 +177,7 @@ func (filter *CandidateFilter) Filter(ctx context.Context, request SelectionRequ
 		}
 		seenDeployments[candidate.Deployment.ID] = struct{}{}
 
-		decision, dependencyErr := filter.evaluateCandidate(ctx, request, requiredCapabilities, candidate)
+		decision, dependencyErr := filter.evaluateCandidate(ctx, request, requiredCapabilities, candidate, excluded)
 		if dependencyErr != nil {
 			return result.Clone(), dependencyErr
 		}
@@ -184,6 +194,7 @@ func (filter *CandidateFilter) evaluateCandidate(
 	request SelectionRequest,
 	requiredCapabilities catalog.CapabilityRequirements,
 	candidate catalog.RouteCandidate,
+	excluded map[string]struct{},
 ) (CandidateDecision, error) {
 	decision := CandidateDecision{DeploymentID: candidate.Deployment.ID}
 	if !modelAllowed(request.Access.KeyAllowedModels, request.Request.LogicalModel) {
@@ -202,6 +213,10 @@ func (filter *CandidateFilter) evaluateCandidate(
 	if candidate.LogicalModel.Status != catalog.StatusActive || candidate.Binding.Status != catalog.StatusActive ||
 		candidate.Deployment.Status != catalog.StatusActive || candidate.Provider.Status != catalog.StatusActive {
 		decision.Reason = FilterInactive
+		return decision, nil
+	}
+	if _, attempted := excluded[candidate.Deployment.ID]; attempted {
+		decision.Reason = FilterPreviouslyAttempted
 		return decision, nil
 	}
 
@@ -233,6 +248,23 @@ func (filter *CandidateFilter) evaluateCandidate(
 	decision.Eligible = true
 	decision.Reason = FilterEligible
 	return decision, nil
+}
+
+func excludedDeploymentSet(deploymentIDs []string) (map[string]struct{}, error) {
+	if len(deploymentIDs) > maximumExcludedDeployments {
+		return nil, fmt.Errorf("route exclusion limit exceeded")
+	}
+	excluded := make(map[string]struct{}, len(deploymentIDs))
+	for _, deploymentID := range deploymentIDs {
+		if !routeDeploymentIDPattern.MatchString(deploymentID) {
+			return nil, fmt.Errorf("route exclusion contains an invalid deployment ID")
+		}
+		if _, duplicate := excluded[deploymentID]; duplicate {
+			return nil, fmt.Errorf("route exclusion contains a duplicate deployment ID")
+		}
+		excluded[deploymentID] = struct{}{}
+	}
+	return excluded, nil
 }
 
 func validateCandidateFacts(request SelectionRequest, candidate catalog.RouteCandidate) error {

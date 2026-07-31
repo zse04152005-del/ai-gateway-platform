@@ -1,6 +1,6 @@
 # Non-stream execution boundary
 
-Status: Implemented by P06-T05
+Status: Implemented by P06-T05 and extended by P08-T07
 
 ## Ownership
 
@@ -18,6 +18,8 @@ Status: Implemented by P06-T05
   `routing.CompositeHealth` combines its state with passive eligibility.
 - `gateway.CircuitChatExecutor` owns the final pre-execution circuit Permit and
   result classification; `routing.CircuitBreaker` owns the state machine.
+- `gateway.nonStreamFailover` owns the request-wide deadline, retry decision,
+  Deployment exclusion, and strictly sequential multi-Attempt lifecycle.
 
 The executor never queries the catalog again. Provider, Deployment, Binding, and LogicalModel come from the same selected catalog fact, avoiding a time-of-check/time-of-use split between routing and adapter construction.
 
@@ -31,7 +33,9 @@ The public response uses the requested LogicalModel. Physical model identity and
 
 ## Attempt boundary
 
-One `NonStreamExecutor.Execute` invocation equals one upstream attempt and the Gateway surrounds it with durable Request/Attempt state transitions. P08 may invoke it again only after retry classification and a fresh Selection; it must never hide multiple upstream charges behind a single attempt record.
+One `NonStreamExecutor.Execute` invocation equals one upstream attempt and the Gateway surrounds it with durable Request/Attempt state transitions. P08-T07 may invoke it again only after `retry-classifier/v1`, durable completion of the preceding Attempt, and a fresh Selection. Every physical call has its own UUID, AttemptNo, Deployment and Usage Summary; `gateway.attempt_count` reports the actual total. Failed known Usage is retained for P10 cost aggregation rather than treating an unseen client response as free.
+
+The public response remains buffered until response projection and terminal recording succeed, so an automatic non-stream failover happens before the first client-visible byte. Request routing and every Attempt share one total deadline. The loop is iterative and capped; no wrapper or Adapter owns a second hidden retry budget.
 
 The observed executor never changes the wrapped response or error when a local
 health observation is rejected. It increments a queryable local failure count

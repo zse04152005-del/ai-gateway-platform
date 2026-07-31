@@ -18,5 +18,6 @@
 - [`active-health-checks.md`](active-health-checks.md)：冷路由低成本探针、连接池/计费隔离、抖动调度与迟滞恢复。
 - [`circuit-breaker.md`](circuit-breaker.md)：Closed/Open/Half-Open、Generation Permit、并发探测和错误归因。
 - [`retry-classification.md`](retry-classification.md)：错误有限分类、首输出不可逆边界、请求级 Attempt/时间/费用预算和重复计费风险。
+- [`failover-orchestration.md`](failover-orchestration.md)：首次客户端输出前的有界重选、独立 Attempt、父 Request 连续性和多 Attempt 费用事实。
 - [`gateway-execution-records.md`](gateway-execution-records.md)：GatewayRequest/RouteAttempt 事实边界、状态机、CAS、追加式证据与 fail-closed 调用顺序。
 - [`stream-cancellation.md`](stream-cancellation.md)：客户端取消到 Adapter/Body/Provider Context 的传播、释放证据和泄漏回归边界。

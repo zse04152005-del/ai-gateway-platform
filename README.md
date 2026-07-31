@@ -2,7 +2,7 @@
 
 企业级 AI 网关与模型成本治理平台项目目录。
 
-当前处于：**非流式数据面核心链路阶段（P06）**。P00～P05 已完成；P06 已接通严格请求解析、规范化、可信选路、共享上游连接池、单 Attempt 的 Adapter 执行、统一普通响应、GatewayRequest/RouteAttempt 持久化，以及客户端取消传播。
+当前处于：**多部署治理阶段（P08）**。P00～P07 已完成；P08 已接通可解释候选过滤、固定/优先级/加权策略、被动与主动健康、Deployment 熔断、有限重试分类，以及首次客户端输出前的有界多 Attempt 故障切换。
 
 ## 项目核心特色
 
@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P06-T08：完成非流式端到端测试`
+`P08-T08：实现路由决策解释记录`
 
-P06-T01～T07 已交付认证后的严格 Chat 解析、无损规范化、Tenant/Project/Key 作用域候选与最小优先级选择、进程级安全 HTTP 连接池、真实 `mock`/`openai` Adapter 的非流式单次执行、数据库强约束的 Request/Attempt 生命周期，以及客户端取消到真实上游释放和 `client_cancelled` 终态记录。公共响应保留 Usage、Finish Reason 和 Tool Call 语义，同时不暴露物理模型、Provider Body、Endpoint、供应商请求 ID 或私有错误。
+数据面已交付认证后的严格 Chat 解析、无损规范化、Tenant/Project/Key 作用域选路、进程级安全 HTTP 连接池、真实 `mock`/`openai` Adapter 执行、数据库强约束的 Request/Attempt 生命周期和客户端取消传播。P08 在此基础上增加最多 3 次、统一 30 秒 Deadline 的有界故障切换：每次物理调用都有独立 Attempt 和 Usage 事实，公共 `attempt_count` 可见真实尝试数，同时不暴露物理模型、Provider Body、Endpoint、供应商请求 ID 或私有错误。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 

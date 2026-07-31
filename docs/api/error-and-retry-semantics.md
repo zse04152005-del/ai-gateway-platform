@@ -75,6 +75,12 @@ P08-T06 使用 `retry-classifier/v1` 把失败判定为 `no_retry`、`retry_allo
 
 所有可重试候选继续受最大 Attempt、额外费用许可、请求总 Deadline、下一 Attempt 最小窗口和 `Retry-After` 约束。已输出模型内容永不重试。Timeout、临时 5xx 和 Transport 在上游提交已发生或无法确认时只能更换 Deployment；Protocol 与首 Token 超时也只能更换 Deployment。完整矩阵和精确时间边界见 [`../architecture/retry-classification.md`](../architecture/retry-classification.md)。
 
+### 3.3 有界故障切换编排
+
+P08-T07 在非流式生产链路接入请求级顺序编排，默认最多 3 个物理 Attempt、总时限 30 秒。每次失败 Attempt 必须先持久化为独立 retryable_failed，再重选 Deployment 和创建新 Attempt；不存在隐藏的 Adapter 内重试。`different_deployment_only` 排除全部已尝试目标，普通 retry 优先备用目标、无替代时才允许原目标。固定策略在“只能换目标”的故障下停止，不能被容灾逻辑暗中绕过。
+
+无备用时对外保留最后一个真实 Provider 错误；重选依赖失败才返回 `ROUTING_UNAVAILABLE`。公共 `gateway.attempt_count` 是真实物理调用数。每个失败 Attempt 保留已知 Usage，供 P10 按全部 Attempt 聚合费用。完整执行与事务边界见 [`../architecture/failover-orchestration.md`](../architecture/failover-orchestration.md)。
+
 ## 4. 首包定义
 
 首包不是 HTTP 响应头，也不是 Gateway heartbeat。只有第一个客户端可见的模型内容、推理内容或工具调用 delta 才视为模型首包。

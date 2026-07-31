@@ -17,6 +17,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action gateway
 
 P08-T04 另建独立的主动健康 HTTP Client/Transport，不复用生产连接池：每 Host 最多 2 个连接，全局调度最多 4 个并发、每批最多 16 个，单次最多 5 秒。探针固定发送 `ping`、最多请求 1 个输出 Token，并标记 `X-AI-Gateway-Traffic-Class: active-health/v1`。它不经过公开 Handler、Virtual Key、业务 Attempt、被动统计或计费记录；有真实被动健康样本的热 Deployment 会暂停主动探针，只检查冷/备用路由。Provider 账户层若要求完全独立的额度或账单，需要后续增加专用 Probe Credential Reference 或接入供应商原生无计费健康端点；当前目录模型不会声称同一 Provider 账户内存在虚假的配额隔离。
 
+公开非流式 Chat 默认使用 P08-T07 故障切换包络：最多 3 个 Attempt、30 秒请求总时限、250ms 最小剩余执行窗口。该上限覆盖重选和 Provider 调用；每次调用前必须已有独立 RouteAttempt，失败记录不可用时不会继续放大请求。
+
 P08-T05 在进程内为每个实际调用过的 Deployment 维护独立 Circuit。Selector 同时要求 Passive、Active 与 Circuit 三个信号允许；执行前再次原子获取 Permit，消除 Half-Open 检查与真实调用之间的并发竞态。默认连续 5 次可归因 Provider 故障后 Open 30 秒，Half-Open 最多 2 个并发探测且需要 2 次成功恢复。Open/Half-Open 饱和竞态统一返回安全的 503 `MODEL_UNAVAILABLE`，不会额外调用 Provider。
 
 非流式 Chat 已注册 `mock` 与 `openai` Factory，并按选定 Deployment 构建 Adapter、执行一次共享 HTTP 调用、解析 Normalized Response，再投影为统一 OpenAI-compatible JSON。开发环境的 OpenAI 凭据通过 PostgreSQL Secret Reference 和本地 Envelope Manager 在请求构造最短边界解析；未配置 Resolver 时 fail closed，不允许从环境变量或目录记录读取明文 Provider Key。

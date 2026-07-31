@@ -85,6 +85,19 @@ func completeRecordedAttempt(
 	return err
 }
 
+func completeRecordedAttemptForRetry(
+	ctx context.Context,
+	recorder execution.Recorder,
+	request execution.GatewayRequest,
+	attempt execution.RouteAttempt,
+	outcome execution.AttemptOutcome,
+) error {
+	recordCtx, cancel := terminalRecordContext(ctx)
+	defer cancel()
+	_, err := recorder.CompleteAttemptForRetry(recordCtx, request, attempt, outcome)
+	return err
+}
+
 func terminalRecordContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		ctx = context.Background()

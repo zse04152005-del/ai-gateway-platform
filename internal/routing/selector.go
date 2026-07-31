@@ -49,8 +49,9 @@ func (ActiveCatalogHealth) Healthy(ctx context.Context, _ string) (bool, error) 
 
 // SelectionRequest contains trusted scope plus one validated normalized request.
 type SelectionRequest struct {
-	Access  catalog.Access
-	Request adapter.NormalizedRequest
+	Access                catalog.Access
+	Request               adapter.NormalizedRequest
+	ExcludedDeploymentIDs []string
 }
 
 // Selection is the immutable catalog fact chosen for one first attempt.

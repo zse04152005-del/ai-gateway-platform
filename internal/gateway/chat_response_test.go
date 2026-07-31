@@ -386,17 +386,22 @@ type stubExecutionRecorder struct {
 	failedStatus          execution.RequestStatus
 	failedReason          string
 	outcome               execution.AttemptOutcome
+	outcomes              []execution.AttemptOutcome
+	retryOutcomes         []execution.AttemptOutcome
+	attemptDeployments    []string
 	events                []string
 	startCalls            int
 	routingCalls          int
 	attemptCalls          int
 	streamingCalls        int
 	completionCalls       int
+	retryCompletionCalls  int
 	failureCalls          int
 	startErr              error
 	routingErr            error
 	attemptErr            error
 	completionErr         error
+	retryCompletionErr    error
 	failureErr            error
 	completionContextErr  error
 	completionHasDeadline bool
@@ -447,6 +452,7 @@ func (stub *stubExecutionRecorder) StartAttempt(
 ) (execution.GatewayRequest, execution.RouteAttempt, error) {
 	stub.attemptCalls++
 	stub.events = append(stub.events, "start_attempt")
+	stub.attemptDeployments = append(stub.attemptDeployments, deploymentID)
 	if stub.attemptErr != nil {
 		return execution.GatewayRequest{}, execution.RouteAttempt{}, stub.attemptErr
 	}
@@ -483,6 +489,7 @@ func (stub *stubExecutionRecorder) CompleteAttempt(
 	stub.completionCalls++
 	stub.events = append(stub.events, "complete_attempt")
 	stub.outcome = outcome
+	stub.outcomes = append(stub.outcomes, outcome)
 	stub.completionContextErr = ctx.Err()
 	_, stub.completionHasDeadline = ctx.Deadline()
 	if stub.completionErr != nil {
@@ -493,6 +500,26 @@ func (stub *stubExecutionRecorder) CompleteAttempt(
 	attempt.Status = outcome.AttemptStatus
 	attempt.Version++
 	return request, attempt, nil
+}
+
+func (stub *stubExecutionRecorder) CompleteAttemptForRetry(
+	ctx context.Context,
+	_ execution.GatewayRequest,
+	attempt execution.RouteAttempt,
+	outcome execution.AttemptOutcome,
+) (execution.RouteAttempt, error) {
+	stub.retryCompletionCalls++
+	stub.events = append(stub.events, "complete_attempt_for_retry")
+	stub.outcome = outcome
+	stub.retryOutcomes = append(stub.retryOutcomes, outcome)
+	stub.completionContextErr = ctx.Err()
+	_, stub.completionHasDeadline = ctx.Deadline()
+	if stub.retryCompletionErr != nil {
+		return execution.RouteAttempt{}, stub.retryCompletionErr
+	}
+	attempt.Status = outcome.AttemptStatus
+	attempt.Version++
+	return attempt, nil
 }
 
 func (stub *stubChatExecutor) Execute(

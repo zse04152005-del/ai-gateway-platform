@@ -116,7 +116,7 @@ func TestNonStreamEndToEnd(t *testing.T) {
 		requestID := nonStreamRequestRoot + "timeout"
 		status, body := performNonStreamRequest(t, credential.gatewayURL, credential.value, requestID, nonStreamModel)
 		assertE2EStatusAndCode(t, status, body, http.StatusGatewayTimeout, "PROVIDER_TIMEOUT")
-		assertNonStreamExecution(t, database, requestID, execution.RequestFailed, "provider_timeout", 1,
+		assertNonStreamExecution(t, database, requestID, execution.RequestFailed, "failover_exhausted", 1,
 			execution.AttemptRetryableFailed, "provider_timeout", "timeout", "PROVIDER_TIMEOUT", false)
 		providerControl.waitReleased(t)
 	})
@@ -126,8 +126,8 @@ func TestNonStreamEndToEnd(t *testing.T) {
 		requestID := nonStreamRequestRoot + "rate-limit"
 		status, body := performNonStreamRequest(t, credential.gatewayURL, credential.value, requestID, nonStreamModel)
 		assertE2EStatusAndCode(t, status, body, http.StatusTooManyRequests, "PROVIDER_RATE_LIMITED")
-		assertNonStreamExecution(t, database, requestID, execution.RequestFailed, "provider_rate_limit", 1,
-			execution.AttemptRetryableFailed, "provider_rate_limit", "rate_limit", "MOCK_RATE_LIMITED", true)
+		assertNonStreamRepeatedFailure(t, database, requestID, "provider_rate_limit", 3,
+			"provider_rate_limit", "rate_limit", "MOCK_RATE_LIMITED", true)
 	})
 
 	t.Run("provider 5xx remains a retryable availability failure", func(t *testing.T) {
@@ -135,8 +135,8 @@ func TestNonStreamEndToEnd(t *testing.T) {
 		requestID := nonStreamRequestRoot + "server-error"
 		status, body := performNonStreamRequest(t, credential.gatewayURL, credential.value, requestID, nonStreamModel)
 		assertE2EStatusAndCode(t, status, body, http.StatusServiceUnavailable, "PROVIDER_UNAVAILABLE")
-		assertNonStreamExecution(t, database, requestID, execution.RequestFailed, "provider_capacity", 1,
-			execution.AttemptRetryableFailed, "provider_capacity", "capacity", "MOCK_PROVIDER_UNAVAILABLE", true)
+		assertNonStreamRepeatedFailure(t, database, requestID, "provider_capacity", 3,
+			"provider_capacity", "capacity", "MOCK_PROVIDER_UNAVAILABLE", true)
 	})
 
 	t.Run("client cancellation releases the real provider and persists cancellation", func(t *testing.T) {
@@ -481,7 +481,8 @@ func assertNonStreamExecution(
 	requestEvents := queryStatusEvents(context.Background(), t, database, `
 		SELECT to_status FROM app.gateway_request_status_events
 		WHERE request_id = $1 ORDER BY request_version`, requestID)
-	wantRequestEvents := []string{"authorized", "routing"}
+	wantRequestEvents := make([]string, 0, attemptCount+3)
+	wantRequestEvents = append(wantRequestEvents, "authorized", "routing")
 	if attemptCount > 0 {
 		wantRequestEvents = append(wantRequestEvents, "running")
 	}
@@ -518,6 +519,87 @@ func assertNonStreamExecution(
 	wantAttemptEvents = append(wantAttemptEvents, string(attemptStatus))
 	if !reflect.DeepEqual(attemptEvents, wantAttemptEvents) {
 		t.Fatalf("RouteAttempt events for %s = %v, want %v", requestID, attemptEvents, wantAttemptEvents)
+	}
+}
+
+func assertNonStreamRepeatedFailure(
+	t *testing.T,
+	database *sql.DB,
+	requestID, requestReason string,
+	attemptCount int,
+	attemptReason, errorCategory, errorCode string,
+	headersReceived bool,
+) {
+	t.Helper()
+	var gotRequestStatus, gotRequestReason string
+	var gotAttemptCount int
+	if err := database.QueryRow(`SELECT status, end_reason, attempt_count
+		FROM app.gateway_requests WHERE id = $1`, requestID).
+		Scan(&gotRequestStatus, &gotRequestReason, &gotAttemptCount); err != nil {
+		t.Fatalf("query GatewayRequest %s: %v", requestID, err)
+	}
+	if gotRequestStatus != string(execution.RequestFailed) || gotRequestReason != requestReason ||
+		gotAttemptCount != attemptCount {
+		t.Fatalf("GatewayRequest %s = %s/%s/%d, want %s/%s/%d",
+			requestID, gotRequestStatus, gotRequestReason, gotAttemptCount,
+			execution.RequestFailed, requestReason, attemptCount)
+	}
+
+	requestEvents := queryStatusEvents(context.Background(), t, database, `
+		SELECT to_status FROM app.gateway_request_status_events
+		WHERE request_id = $1 ORDER BY request_version`, requestID)
+	wantRequestEvents := make([]string, 0, attemptCount+3)
+	wantRequestEvents = append(wantRequestEvents, "authorized", "routing")
+	for range attemptCount {
+		wantRequestEvents = append(wantRequestEvents, string(execution.RequestRunning))
+	}
+	wantRequestEvents = append(wantRequestEvents, string(execution.RequestFailed))
+	if !reflect.DeepEqual(requestEvents, wantRequestEvents) {
+		t.Fatalf("GatewayRequest events for %s = %v, want %v", requestID, requestEvents, wantRequestEvents)
+	}
+
+	rows, err := database.Query(`SELECT id::text, attempt_no, status, end_reason,
+		COALESCE(error_category, ''), COALESCE(error_code, ''), headers_received_at IS NOT NULL
+		FROM app.route_attempts WHERE request_id = $1 ORDER BY attempt_no`, requestID)
+	if err != nil {
+		t.Fatalf("query RouteAttempts for %s: %v", requestID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	seen := 0
+	for rows.Next() {
+		seen++
+		var attemptID, gotStatus, gotReason, gotCategory, gotCode string
+		var attemptNo int
+		var gotHeaders bool
+		if err := rows.Scan(
+			&attemptID, &attemptNo, &gotStatus, &gotReason, &gotCategory, &gotCode, &gotHeaders,
+		); err != nil {
+			t.Fatalf("scan RouteAttempt %d for %s: %v", seen, requestID, err)
+		}
+		if attemptNo != seen || gotStatus != string(execution.AttemptRetryableFailed) ||
+			gotReason != attemptReason || gotCategory != errorCategory || gotCode != errorCode ||
+			gotHeaders != headersReceived {
+			t.Fatalf("RouteAttempt %d for %s = no:%d %s/%s/%q/%q/headers=%t",
+				seen, requestID, attemptNo, gotStatus, gotReason, gotCategory, gotCode, gotHeaders)
+		}
+		attemptEvents := queryStatusEvents(context.Background(), t, database, `
+			SELECT to_status FROM app.route_attempt_status_events
+			WHERE attempt_id = $1::uuid ORDER BY attempt_version`, attemptID)
+		wantAttemptEvents := []string{"created", "connecting"}
+		if headersReceived {
+			wantAttemptEvents = append(wantAttemptEvents, "headers_received")
+		}
+		wantAttemptEvents = append(wantAttemptEvents, string(execution.AttemptRetryableFailed))
+		if !reflect.DeepEqual(attemptEvents, wantAttemptEvents) {
+			t.Fatalf("RouteAttempt events %d for %s = %v, want %v",
+				seen, requestID, attemptEvents, wantAttemptEvents)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate RouteAttempts for %s: %v", requestID, err)
+	}
+	if seen != attemptCount {
+		t.Fatalf("RouteAttempt count for %s = %d, want %d", requestID, seen, attemptCount)
 	}
 }
 

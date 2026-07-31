@@ -46,6 +46,7 @@ func TestAttemptOutcomeValidationMatrix(t *testing.T) {
 	valid := []AttemptOutcome{
 		{AttemptStatus: AttemptSucceeded, RequestStatus: RequestSucceeded, HeadersReceived: true, EndReason: "completed", ProviderRequestID: "req/provider-1", Usage: &usage},
 		{AttemptStatus: AttemptRetryableFailed, RequestStatus: RequestFailed, EndReason: "provider_capacity", ErrorCategory: string(adapter.ErrorCapacity), ErrorCode: "PROVIDER_CAPACITY"},
+		{AttemptStatus: AttemptRetryableFailed, RequestStatus: RequestRunning, HeadersReceived: true, EndReason: "provider_capacity", ErrorCategory: string(adapter.ErrorCapacity), ErrorCode: "PROVIDER_CAPACITY", Usage: &usage},
 		{AttemptStatus: AttemptFailed, RequestStatus: RequestFailed, HeadersReceived: true, EndReason: "provider_protocol", ProviderRequestID: "provider:request_1", ErrorCategory: "protocol", ErrorCode: "PROVIDER_PROTOCOL"},
 		{AttemptStatus: AttemptPartialFailed, RequestStatus: RequestPartialFailed, HeadersReceived: true, EndReason: "stream_interrupted", ErrorCategory: "transport", ErrorCode: "STREAM_INTERRUPTED", Usage: &usage},
 		{AttemptStatus: AttemptCancelled, RequestStatus: RequestCancelled, EndReason: "client_cancelled", ErrorCategory: string(adapter.ErrorCancelled), ErrorCode: "CLIENT_CANCELLED"},
@@ -64,7 +65,7 @@ func TestAttemptOutcomeValidationMatrix(t *testing.T) {
 		{AttemptStatus: AttemptFailed, RequestStatus: RequestFailed, EndReason: "failed", ErrorCategory: "transport", ErrorCode: "lowercase"},
 		{AttemptStatus: AttemptFailed, RequestStatus: RequestFailed, EndReason: "failed", ProviderRequestID: "unsafe provider id", ErrorCategory: "transport", ErrorCode: "TRANSPORT_FAILED"},
 		{AttemptStatus: AttemptFailed, RequestStatus: RequestFailed, EndReason: "failed", ProviderRequestID: "provider-request-without-headers", ErrorCategory: "transport", ErrorCode: "TRANSPORT_FAILED"},
-		{AttemptStatus: AttemptRetryableFailed, RequestStatus: RequestFailed, EndReason: "failed", ErrorCategory: "transport", ErrorCode: "TRANSPORT_FAILED", Usage: &usage},
+		{AttemptStatus: AttemptRetryableFailed, RequestStatus: RequestSucceeded, EndReason: "failed", ErrorCategory: "transport", ErrorCode: "TRANSPORT_FAILED", Usage: &usage},
 		{AttemptStatus: AttemptPartialFailed, RequestStatus: RequestPartialFailed, EndReason: "stream_interrupted", ErrorCategory: "transport", ErrorCode: "STREAM_INTERRUPTED", Usage: &usage},
 		{AttemptStatus: AttemptCancelled, RequestStatus: RequestCancelled, EndReason: "client_cancelled", ErrorCategory: "transport", ErrorCode: "CLIENT_CANCELLED"},
 	}

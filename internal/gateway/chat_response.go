@@ -80,8 +80,9 @@ func projectChatCompletion(
 	result adapter.NormalizedResponse,
 	logicalModel string,
 	requestID string,
+	attemptCount int,
 ) (chatCompletionResponse, error) {
-	if result.Validate() != nil || logicalModel == "" || requestID == "" {
+	if result.Validate() != nil || logicalModel == "" || requestID == "" || attemptCount < 1 {
 		return chatCompletionResponse{}, proxy.ErrProtocol
 	}
 	choices := make([]chatResponseChoice, len(result.Choices))
@@ -102,7 +103,7 @@ func projectChatCompletion(
 	return chatCompletionResponse{
 		ID: result.ResponseID, Object: "chat.completion", Created: result.ObservedAt.Unix(),
 		Model: logicalModel, Choices: choices, Usage: usage,
-		Gateway: chatGatewayMetadata{RequestID: requestID, AttemptCount: 1, UsageComplete: usageComplete},
+		Gateway: chatGatewayMetadata{RequestID: requestID, AttemptCount: attemptCount, UsageComplete: usageComplete},
 	}, nil
 }
 

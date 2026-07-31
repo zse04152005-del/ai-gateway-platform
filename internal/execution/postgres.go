@@ -30,6 +30,7 @@ type Recorder interface {
 	FailRequest(context.Context, GatewayRequest, RequestStatus, string) (GatewayRequest, error)
 	StartAttempt(context.Context, GatewayRequest, string) (GatewayRequest, RouteAttempt, error)
 	MarkAttemptStreaming(context.Context, GatewayRequest, RouteAttempt, string) (RouteAttempt, error)
+	CompleteAttemptForRetry(context.Context, GatewayRequest, RouteAttempt, AttemptOutcome) (RouteAttempt, error)
 	CompleteAttempt(context.Context, GatewayRequest, RouteAttempt, AttemptOutcome) (GatewayRequest, RouteAttempt, error)
 }
 
@@ -254,35 +255,11 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 	}
 	defer func() { _ = transaction.Rollback() }()
 
-	currentAttempt := attempt
-	if attempt.Status == AttemptConnecting && outcome.HeadersReceived {
-		currentAttempt, err = scanAttempt(transaction.QueryRowContext(ctx, `
-			UPDATE app.route_attempts
-			SET status = 'headers_received', headers_received_at = $4,
-				provider_request_id = NULLIF($5, ''), version = version + 1, updated_at = $4
-			WHERE id = $1 AND request_id = $2 AND status = 'connecting' AND version = $3
-			RETURNING `+attemptColumns,
-			attempt.ID, request.ID, attempt.Version, now, outcome.ProviderRequestID,
-		))
-		if err != nil {
-			return GatewayRequest{}, RouteAttempt{}, mapDatabaseError(err)
-		}
-	}
-	completedAttempt, err := scanAttempt(transaction.QueryRowContext(ctx, `
-		UPDATE app.route_attempts
-		SET status = $4, ended_at = $5, end_reason = $6,
-			error_category = NULLIF($7, ''), error_code = NULLIF($8, ''),
-			usage_summary = $9::jsonb,
-			provider_request_id = COALESCE(provider_request_id, NULLIF($10, '')),
-			version = version + 1, updated_at = $5
-		WHERE id = $1 AND request_id = $2 AND status = $3 AND version = $11
-		RETURNING `+attemptColumns,
-		currentAttempt.ID, request.ID, currentAttempt.Status, outcome.AttemptStatus,
-		now, outcome.EndReason, outcome.ErrorCategory, outcome.ErrorCode,
-		nullableJSON(usageSummary), outcome.ProviderRequestID, currentAttempt.Version,
-	))
+	completedAttempt, err := completeAttemptInTransaction(
+		ctx, transaction, request, attempt, outcome, usageSummary, now,
+	)
 	if err != nil {
-		return GatewayRequest{}, RouteAttempt{}, mapDatabaseError(err)
+		return GatewayRequest{}, RouteAttempt{}, err
 	}
 	completedRequest, err := scanRequest(transaction.QueryRowContext(ctx, `
 		UPDATE app.gateway_requests
@@ -301,10 +278,104 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 	return completedRequest, completedAttempt, nil
 }
 
+// CompleteAttemptForRetry durably terminates one failed physical Attempt while
+// deliberately keeping its parent Request RUNNING for a subsequent Attempt.
+func (recorder *PostgresRecorder) CompleteAttemptForRetry(
+	ctx context.Context,
+	request GatewayRequest,
+	attempt RouteAttempt,
+	outcome AttemptOutcome,
+) (RouteAttempt, error) {
+	if recorder == nil || recorder.database == nil || recorder.now == nil || ctx == nil ||
+		validateRequestHandle(request, RequestRunning) != nil ||
+		validateRetryAttemptCompletion(attempt, outcome) != nil || attempt.RequestID != request.ID {
+		return RouteAttempt{}, ErrInvalid
+	}
+	usageSummary, err := marshalUsageSummary(outcome.Usage)
+	if err != nil {
+		return RouteAttempt{}, err
+	}
+	now := recorder.now().UTC()
+	transaction, err := recorder.database.BeginTx(ctx, nil)
+	if err != nil {
+		return RouteAttempt{}, newRecordError(ErrUnavailable, err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	completedAttempt, err := completeAttemptInTransaction(
+		ctx, transaction, request, attempt, outcome, usageSummary, now,
+	)
+	if err != nil {
+		return RouteAttempt{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return RouteAttempt{}, newRecordError(ErrUnavailable, err)
+	}
+	return completedAttempt, nil
+}
+
+func completeAttemptInTransaction(
+	ctx context.Context,
+	transaction *sql.Tx,
+	request GatewayRequest,
+	attempt RouteAttempt,
+	outcome AttemptOutcome,
+	usageSummary []byte,
+	now time.Time,
+) (RouteAttempt, error) {
+	currentAttempt := attempt
+	var err error
+	if attempt.Status == AttemptConnecting && outcome.HeadersReceived {
+		currentAttempt, err = scanAttempt(transaction.QueryRowContext(ctx, `
+			UPDATE app.route_attempts
+			SET status = 'headers_received', headers_received_at = $4,
+				provider_request_id = NULLIF($5, ''), version = version + 1, updated_at = $4
+			WHERE id = $1 AND request_id = $2 AND status = 'connecting' AND version = $3
+			RETURNING `+attemptColumns,
+			attempt.ID, request.ID, attempt.Version, now, outcome.ProviderRequestID,
+		))
+		if err != nil {
+			return RouteAttempt{}, mapDatabaseError(err)
+		}
+	}
+	completedAttempt, err := scanAttempt(transaction.QueryRowContext(ctx, `
+		UPDATE app.route_attempts
+		SET status = $4, ended_at = $5, end_reason = $6,
+			error_category = NULLIF($7, ''), error_code = NULLIF($8, ''),
+			usage_summary = $9::jsonb,
+			provider_request_id = COALESCE(provider_request_id, NULLIF($10, '')),
+			version = version + 1, updated_at = $5
+		WHERE id = $1 AND request_id = $2 AND status = $3 AND version = $11
+		RETURNING `+attemptColumns,
+		currentAttempt.ID, request.ID, currentAttempt.Status, outcome.AttemptStatus,
+		now, outcome.EndReason, outcome.ErrorCategory, outcome.ErrorCode,
+		nullableJSON(usageSummary), outcome.ProviderRequestID, currentAttempt.Version,
+	))
+	if err != nil {
+		return RouteAttempt{}, mapDatabaseError(err)
+	}
+	return completedAttempt, nil
+}
+
 func validateAttemptCompletion(attempt RouteAttempt, outcome AttemptOutcome) error {
 	if outcome.Validate() != nil {
 		return ErrInvalid
 	}
+	if outcome.RequestStatus == RequestRunning {
+		return ErrInvalid
+	}
+	return validateAttemptStateCompletion(attempt, outcome)
+}
+
+func validateRetryAttemptCompletion(attempt RouteAttempt, outcome AttemptOutcome) error {
+	if outcome.Validate() != nil || outcome.AttemptStatus != AttemptRetryableFailed ||
+		outcome.RequestStatus != RequestRunning {
+		return ErrInvalid
+	}
+	return validateAttemptStateCompletion(attempt, outcome)
+}
+
+func validateAttemptStateCompletion(attempt RouteAttempt, outcome AttemptOutcome) error {
 	switch attempt.Status {
 	case AttemptConnecting:
 		if validateAttemptHandle(attempt, AttemptConnecting) != nil || outcome.AttemptStatus == AttemptPartialFailed {

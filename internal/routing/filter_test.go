@@ -47,6 +47,12 @@ func TestCandidateFilterRecordsEveryFiniteReason(t *testing.T) {
 			},
 		},
 		{
+			name: "previous attempt", wantReason: FilterPreviouslyAttempted,
+			mutate: func(request *SelectionRequest, candidate *catalog.RouteCandidate, _ *filterHealthReader, _ *filterEligibilityReader, _ *filterEligibilityReader) {
+				request.ExcludedDeploymentIDs = []string{candidate.Deployment.ID}
+			},
+		},
+		{
 			name: "health", wantReason: FilterUnhealthy,
 			mutate: func(_ *SelectionRequest, _ *catalog.RouteCandidate, health *filterHealthReader, _ *filterEligibilityReader, _ *filterEligibilityReader) {
 				health.allowed = false
@@ -134,6 +140,12 @@ func TestCandidateFilterUsesStrictOrderAndShortCircuit(t *testing.T) {
 			name: "health", wantEvents: []string{"health"},
 			mutate: func(_ *SelectionRequest, _ *catalog.RouteCandidate, health *filterHealthReader, _ *filterEligibilityReader, _ *filterEligibilityReader) {
 				health.allowed = false
+			},
+		},
+		{
+			name: "previous attempt", wantEvents: nil,
+			mutate: func(request *SelectionRequest, candidate *catalog.RouteCandidate, _ *filterHealthReader, _ *filterEligibilityReader, _ *filterEligibilityReader) {
+				request.ExcludedDeploymentIDs = []string{candidate.Deployment.ID}
 			},
 		},
 		{
@@ -405,6 +417,41 @@ func TestCandidateFilterConstructorContextAndEligibilityProjection(t *testing.T)
 	*projection.MaxOutputTokens = 1
 	if *request.Request.MaxOutputTokens != maxTokens || *capacity.calls[0].MaxOutputTokens != maxTokens {
 		t.Fatal("eligibility projection aliases another reader or the normalized request")
+	}
+}
+
+func TestCandidateFilterValidatesRequestScopedExclusions(t *testing.T) {
+	t.Parallel()
+	candidate := routeCandidate(1, "provider-a", "deployment-a", 90)
+	filter := mustCandidateFilter(
+		t, &stubCandidateSource{candidates: []catalog.RouteCandidate{candidate}},
+		&filterHealthReader{allowed: true}, &filterEligibilityReader{allowed: true},
+		&filterEligibilityReader{allowed: true},
+	)
+
+	request := routeSelectionRequest()
+	request.ExcludedDeploymentIDs = []string{candidate.Deployment.ID}
+	result, err := filter.Filter(context.Background(), request)
+	if err != nil || len(result.Decisions) != 1 || result.Decisions[0].Reason != FilterPreviouslyAttempted ||
+		result.Decisions[0].Eligible {
+		t.Fatalf("excluded decision = %+v, error = %v", result, err)
+	}
+
+	for _, exclusions := range [][]string{
+		{"not-a-deployment"},
+		{candidate.Deployment.ID, candidate.Deployment.ID},
+		func() []string {
+			values := make([]string, maximumExcludedDeployments+1)
+			for index := range values {
+				values[index] = routeUUID(7, 1000+index)
+			}
+			return values
+		}(),
+	} {
+		request.ExcludedDeploymentIDs = exclusions
+		if _, err := filter.Filter(context.Background(), request); err == nil {
+			t.Fatalf("Filter(exclusions=%d) error = nil", len(exclusions))
+		}
 	}
 }
 

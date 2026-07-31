@@ -125,6 +125,21 @@ func TestAttemptCompletionStateProtectsClientVisibleOutput(t *testing.T) {
 	if err := validateAttemptCompletion(connecting, partial); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("connecting partial completion error = %v, want ErrInvalid", err)
 	}
+	retryable := AttemptOutcome{
+		AttemptStatus: AttemptRetryableFailed, RequestStatus: RequestRunning, HeadersReceived: true,
+		EndReason: "provider_capacity", ErrorCategory: "capacity", ErrorCode: "PROVIDER_CAPACITY",
+		Usage: &usage,
+	}
+	if err := validateRetryAttemptCompletion(connecting, retryable); err != nil {
+		t.Fatalf("valid retry completion error = %v", err)
+	}
+	if err := validateAttemptCompletion(connecting, retryable); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("terminal completion accepted running request: %v", err)
+	}
+	retryable.RequestStatus = RequestFailed
+	if err := validateRetryAttemptCompletion(connecting, retryable); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("retry completion accepted terminal request: %v", err)
+	}
 	for _, status := range []AttemptStatus{AttemptRetryableFailed, AttemptFailed} {
 		outcome := AttemptOutcome{
 			AttemptStatus: status, RequestStatus: RequestFailed, HeadersReceived: true,
