@@ -10,6 +10,9 @@ Status: Implemented by P06-T05
 - `proxy.NonStreamExecutor` owns one selected HTTP exchange.
 - each Adapter owns bounded response-body consumption and protocol normalization.
 - `upstreamhttp.Client` owns the process-wide connection pool and transport policy.
+- `gateway.ObservedChatExecutor` owns best-effort passive-health classification
+  around the exact physical attempt; `routing.PassiveHealth` owns the bounded
+  sliding-window aggregate and eligibility view.
 
 The executor never queries the catalog again. Provider, Deployment, Binding, and LogicalModel come from the same selected catalog fact, avoiding a time-of-check/time-of-use split between routing and adapter construction.
 
@@ -24,3 +27,9 @@ The public response uses the requested LogicalModel. Physical model identity and
 ## Attempt boundary
 
 One `NonStreamExecutor.Execute` invocation equals one upstream attempt and the Gateway surrounds it with durable Request/Attempt state transitions. P08 may invoke it again only after retry classification and a fresh Selection; it must never hide multiple upstream charges behind a single attempt record.
+
+The observed executor never changes the wrapped response or error when a local
+health observation is rejected. It increments a queryable local failure count
+instead. Client cancellation is removed only from the in-memory observation
+context, not from provider execution. Non-stream total latency is recorded, but
+TTFT remains absent rather than being fabricated from whole-response latency.

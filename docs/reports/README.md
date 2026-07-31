@@ -24,3 +24,4 @@
 - [P06-T07 客户端取消传播](2026-07-30-p06-t07-client-cancellation.md)
 - [P08-T01 可解释候选过滤器](2026-07-31-p08-t01-candidate-filter.md)
 - [P08-T02 固定、优先级与加权路由](2026-07-31-p08-t02-routing-policies.md)
+- [P08-T03 被动健康统计](2026-07-31-p08-t03-passive-health.md)

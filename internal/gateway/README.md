@@ -6,4 +6,6 @@
 
 `POST /v1/chat/completions` 的非流式路径已接通严格解析、规范化、可信选路、单次 Provider 执行与统一 JSON。公共 `model` 始终是逻辑模型；Usage 不把缺失计量伪造为 0，Tool Call Arguments 保持 JSON 字符串，Provider Body/Endpoint/物理模型和私有错误不进入响应。`stream=true` 在 P07 前明确返回 501，不静默降级。
 
+P08-T03 用 `ObservedChatExecutor` 包装真实非流式 Attempt，并把终态分类为成功、429、5xx、Provider Timeout、Caller Cancellation 或 Other Failure，连同总延迟写入进程级 `routing.PassiveHealth`。记录使用 `context.WithoutCancel`，因此客户端取消后仍可完成本地统计；观察失败只增加本地 Failure Counter，不得篡改已经产生的 Provider Response/Error。非流式路径不把完整响应延迟冒充 TTFT，真实 First Token 指标由流式 Attempt 在获得首模型事件时写入同一 Observation Contract。
+
 其他未实现业务端点返回安全 JSON 404。非 `/v1/*` 未知路径不触发数据库认证，避免扫描流量消耗认证资源。

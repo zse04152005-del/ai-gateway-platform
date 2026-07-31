@@ -51,10 +51,24 @@ replay interval selection without exposing content or infrastructure secrets.
 P08-T08 owns persistence; published multi-tenant policy storage is deliberately
 outside the process environment configuration.
 
-`ActiveCatalogHealth` is an explicit bootstrap implementation: a catalog-active
-deployment is considered healthy unless the request context is cancelled. P08
-replaces it with active/passive measurements and a circuit breaker without
-changing the selector interface. It is not presented as measured health.
+`PassiveHealth` is the P08-T03 production bootstrap `HealthReader`. It keeps a
+bounded, per-deployment ring of time buckets and records request totals, HTTP
+429, HTTP 5xx, provider timeouts, caller cancellations, other failures, TTFT,
+and total latency. Snapshots expose average, maximum, and fixed-histogram
+P50/P95/P99 upper bounds without retaining request content.
+
+Only success, 429, 5xx, and timeout outcomes count as health samples. Caller
+cancellation and configuration/protocol failures remain visible in request
+totals but cannot satisfy the minimum sample or dilute the provider failure
+ratio. A deployment is `warmup` and eligible below the sample floor; it becomes
+`degraded` only when a sufficient sliding-window sample reaches the configured
+failure ratio. Expired buckets naturally return it to warmup so passive-only
+signals cannot blacklist a deployment forever. P08-T05 later owns explicit
+circuit state and half-open probing.
+
+The deployment map has deterministic least-recently-observed eviction and a
+hard size bound. `ActiveCatalogHealth` remains an explicit compatibility/test
+implementation and is not presented as measured health.
 
 Catalog records are structurally and relationally validated before policy
 evaluation, without treating a valid disabled status or a policy mismatch as

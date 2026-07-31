@@ -131,7 +131,11 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create model catalog store: %w", err)
 	}
-	routeSelector, err := routing.NewSelector(modelCatalog, routing.ActiveCatalogHealth{})
+	passiveHealth, err := routing.NewPassiveHealth(routing.DefaultPassiveHealthOptions(), time.Now)
+	if err != nil {
+		return fmt.Errorf("create passive health tracker: %w", err)
+	}
+	routeSelector, err := routing.NewSelector(modelCatalog, passiveHealth)
 	if err != nil {
 		return fmt.Errorf("create route selector: %w", err)
 	}
@@ -139,12 +143,16 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create chat executor: %w", err)
 	}
+	observedChatExecutor, err := gateway.NewObservedChatExecutor(chatExecutor, passiveHealth, time.Now)
+	if err != nil {
+		return fmt.Errorf("create observed chat executor: %w", err)
+	}
 	executionRecorder, err := execution.NewPostgresRecorder(database, time.Now, rand.Reader)
 	if err != nil {
 		return fmt.Errorf("create execution recorder: %w", err)
 	}
 	applicationHandler, err := gateway.NewExecutableHandler(
-		authenticator, modelCatalog, routeSelector, chatExecutor, executionRecorder,
+		authenticator, modelCatalog, routeSelector, observedChatExecutor, executionRecorder,
 	)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)
