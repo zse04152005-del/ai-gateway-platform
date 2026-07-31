@@ -4,6 +4,7 @@ package routing
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
@@ -55,11 +56,14 @@ type SelectionRequest struct {
 // Selection is the immutable catalog fact chosen for one first attempt.
 type Selection struct {
 	Candidate catalog.RouteCandidate
+	Decision  PolicyDecision
 }
 
-// Selector performs deterministic minimum viable priority routing.
+// Selector filters candidates and applies one resolved first-attempt policy.
 type Selector struct {
-	filter *CandidateFilter
+	filter   *CandidateFilter
+	policies PolicyResolver
+	random   RandomSource
 }
 
 // NewSelector validates dependencies.
@@ -69,27 +73,61 @@ func NewSelector(source CandidateSource, health HealthReader) (*Selector, error)
 
 // NewSelectorWithEligibility installs explicit budget and capacity readers.
 func NewSelectorWithEligibility(source CandidateSource, health HealthReader, budget BudgetReader, capacity CapacityReader) (*Selector, error) {
+	return NewSelectorWithRoutingPolicy(
+		source, health, budget, capacity, bootstrapPolicyResolver{}, systemRandom{},
+	)
+}
+
+// NewSelectorWithRoutingPolicy installs explicit policy and random sources.
+func NewSelectorWithRoutingPolicy(
+	source CandidateSource,
+	health HealthReader,
+	budget BudgetReader,
+	capacity CapacityReader,
+	policies PolicyResolver,
+	random RandomSource,
+) (*Selector, error) {
 	filter, err := NewCandidateFilter(source, health, budget, capacity)
 	if err != nil {
 		return nil, err
 	}
-	return &Selector{filter: filter}, nil
+	if policies == nil {
+		return nil, errors.New("route policy resolver must not be nil")
+	}
+	if random == nil {
+		return nil, errors.New("route random source must not be nil")
+	}
+	return &Selector{filter: filter, policies: policies, random: random}, nil
 }
 
 // Select filters request capabilities, then returns the first healthy candidate
 // by ascending binding priority and stable provider/deployment tie breakers.
 func (selector *Selector) Select(ctx context.Context, request SelectionRequest) (Selection, error) {
-	if selector == nil || selector.filter == nil {
+	if selector == nil || selector.filter == nil || selector.policies == nil || selector.random == nil {
 		return Selection{}, errors.New("route selector is not initialized")
 	}
 	result, err := selector.filter.Filter(ctx, request)
 	if err != nil {
 		return Selection{}, err
 	}
-	if len(result.eligible) > 0 {
-		return Selection{Candidate: result.eligible[0].Clone()}, nil
+	if len(result.eligible) == 0 {
+		return Selection{}, ErrNoCandidate
 	}
-	return Selection{}, ErrNoCandidate
+	policy, err := selector.policies.Resolve(ctx, PolicyRequest{
+		TenantID: request.Access.TenantID, ProjectID: request.Access.ProjectID,
+		LogicalModel: request.Request.LogicalModel,
+	})
+	if err != nil {
+		return Selection{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
+	}
+	if err := policy.Validate(); err != nil {
+		return Selection{}, fmt.Errorf("%w: invalid resolved policy", ErrPolicyUnavailable)
+	}
+	candidate, decision, err := selectByPolicy(result.eligible, policy, selector.random)
+	if err != nil {
+		return Selection{}, err
+	}
+	return Selection{Candidate: candidate.Clone(), Decision: decision.Clone()}, nil
 }
 
 func requiredRequestCapabilities(request adapter.NormalizedRequest) catalog.CapabilityRequirements {

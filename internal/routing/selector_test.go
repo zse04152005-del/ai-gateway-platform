@@ -36,6 +36,12 @@ func TestSelectorChoosesFirstHealthyCandidateByStablePriority(t *testing.T) {
 	if selection.Candidate.Deployment.ID != middle.Deployment.ID {
 		t.Fatalf("selected deployment = %s, want %s", selection.Candidate.Deployment.ID, middle.Deployment.ID)
 	}
+	if selection.Decision.PolicyVersion != bootstrapPriorityPolicyVersion || selection.Decision.Mode != RoutePriority ||
+		selection.Decision.SelectedDeploymentID != middle.Deployment.ID || selection.Decision.EligibleCount != 2 ||
+		selection.Decision.Priority != middle.Binding.Priority || selection.Decision.Weight != middle.Binding.Weight ||
+		selection.Decision.TotalWeight != 0 || selection.Decision.RandomDraw != nil {
+		t.Fatalf("policy decision = %+v", selection.Decision)
+	}
 	if !reflect.DeepEqual(health.calls, []string{high.Deployment.ID, middle.Deployment.ID, low.Deployment.ID}) {
 		t.Fatalf("health calls = %#v", health.calls)
 	}

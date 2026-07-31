@@ -28,8 +28,28 @@ and capacity stages install production readers.
 Candidate ordering is ascending binding priority, then provider code,
 deployment code, and deployment ID. It sorts locally even when the source is
 already ordered so an alternate source cannot silently change policy. All
-candidates are evaluated for an explainable report; selection still returns
-the first eligible candidate in this stable order.
+candidates are evaluated for an explainable report before one of three
+versioned P08-T02 selection modes runs:
+
+- `fixed`: select only the configured eligible deployment; never silently
+  substitute another deployment;
+- `priority`: select the first eligible candidate in stable order;
+- `weighted`: draw over all eligible candidates using each binding's positive
+  weight and stable cumulative intervals.
+
+`PolicyResolver` receives only tenant, project, and logical-model identity.
+Resolved policies are validated before use. `RandomSource` makes the weighted
+draw injectable; `NewSeededRandom` provides a deterministic, mutex-protected
+PCG stream for repeatable and race-safe tests. The process default uses a
+concurrency-safe non-cryptographic source because a load-distribution draw is
+not a security decision.
+
+Every `Selection` carries a safe `PolicyDecision`: policy version, mode,
+selected deployment ID, priority, weight, eligible count, and—only for a real
+multi-candidate weighted choice—total weight and random draw. This is enough to
+replay interval selection without exposing content or infrastructure secrets.
+P08-T08 owns persistence; published multi-tenant policy storage is deliberately
+outside the process environment configuration.
 
 `ActiveCatalogHealth` is an explicit bootstrap implementation: a catalog-active
 deployment is considered healthy unless the request context is cancelled. P08
@@ -48,7 +68,9 @@ Failure classes are finite:
 - `ErrCandidateSource`: catalog query or stored facts are untrustworthy;
 - `ErrHealthUnavailable`: the health dependency cannot decide safely;
 - `ErrBudgetUnavailable`: the budget dependency cannot decide safely;
-- `ErrCapacityUnavailable`: the capacity dependency cannot decide safely.
+- `ErrCapacityUnavailable`: the capacity dependency cannot decide safely;
+- `ErrPolicyUnavailable`: the policy dependency or resolved policy is untrustworthy;
+- `ErrRandomUnavailable`: weighted selection could not obtain an in-range draw.
 
 The Gateway maps no-candidate to `503 MODEL_UNAVAILABLE` and infrastructure
 failures to `503 ROUTING_UNAVAILABLE`. Neither response includes catalog,
