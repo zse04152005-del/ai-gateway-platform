@@ -2,7 +2,7 @@
 
 - 日期：2026-07-31
 - 范围：候选过滤、策略评分、最终选择、重试因果链、Tenant/Project 作用域复盘
-- 结论：实现与本地完整门禁通过，GitHub Actions 证据在远端全绿后写入开发执行清单
+- 结论：实现、本地完整门禁与 GitHub Actions 三 Job 全部通过
 
 ## 1. 实现结果
 
@@ -46,3 +46,7 @@ RouteDecision 写入失败时不会创建 Attempt 或调用 Provider；RetryDeci
 - 完整 `scripts/dev.ps1 -Action check` 通过，包括单测、race、漏洞扫描、迁移连续性和本地高风险 Secret 扫描；
 - `migration validation passed: count=9 latest=000009_create_route_decisions`；
 - `scripts/dev.ps1 -Action test-integration` 在真实 PostgreSQL 上全量通过。
+
+## 6. 远端门禁
+
+实现提交为 `a5cfeb8`。首次远端运行暴露 CI 工作流仍硬编码迁移版本 8；`4d1af1e` 将断言更新为 `9→8→9`，并把 `TestRouteDecisionReplayEnforcesScopeAndSequence` 加入 migration integration Job。最终 GitHub Actions [`30622774597`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30622774597) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿。
