@@ -55,3 +55,17 @@ The terminal return path calls the same `sync.Once`-protected close operation be
 - non-negative `CancellationPropagation` between those two local lifecycle facts.
 
 These fields contain no endpoint, content, client cause text, or Provider response. A remote Provider's actual billing stop cannot be guaranteed by TCP cancellation; real-HTTP tests separately require the upstream server request Context to observe cancellation within one second.
+
+## Irreversible failover boundary
+
+`FailoverGate` owns the concurrency boundary between replacing a physical upstream Attempt and committing normalized model output to the existing client response:
+
+- only a controller-produced first-token `TimeoutFailure` can request the next Attempt;
+- HTTP headers, message-start, Provider heartbeat, Gateway heartbeat, Usage, end and extension facts do not commit model output;
+- content, reasoning and tool deltas atomically commit the response before the downstream sink is invoked;
+- after commitment, even a contradictory/stale retry permit cannot invoke a backup starter;
+- once a replacement Attempt is reserved, the predecessor token is stale and its late Chunk cannot reach the sink;
+- the first sink error is treated conservatively as a possibly partial client write, so transparent failover remains forbidden;
+- a hard 1～32 Attempt bound is enforced here; P08 adds total-time, retry taxonomy, budget and routing policy outside this semantic guard.
+
+`Forward` serializes client events and deep-copies each Chunk. The gate snapshot exposes only Attempt counts, model-output state, forwarded event counts and denial counts; it contains no model content, Provider error or Deployment ID.
