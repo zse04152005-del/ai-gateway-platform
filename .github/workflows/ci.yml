@@ -72,9 +72,21 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
       APP_ENV: test
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/ai_gateway_ci?sslmode=disable
+      REDIS_ADDR: localhost:6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -89,7 +101,7 @@ jobs:
           go run ./cmd/migrate up --path migrations
           go run ./cmd/migrate up --path migrations
           go run ./cmd/migrate version --path migrations | grep -q "version=10 dirty=false"
-          go test -count=1 -tags=integration ./tests/integration/... -run 'Test(TenantProjectSchemaConstraints|VirtualAPIKeySchemaConstraints|VirtualKeyLifecycle|VirtualKeyAuthentication|ModelCatalogSchemaConstraints|ModelListAuthorizationIntersection|ProviderSecretEnvelopeAndReferenceIsolation|TenantIsolationBoundaries|GatewayExecutionLifecycle|NonStreamEndToEnd|RouteDecisionReplayEnforcesScopeAndSequence|LimitPolicySchemaConstraints)'
+          go test -count=1 -tags=integration ./tests/integration/... -run 'Test(TenantProjectSchemaConstraints|VirtualAPIKeySchemaConstraints|VirtualKeyLifecycle|VirtualKeyAuthentication|ModelCatalogSchemaConstraints|ModelListAuthorizationIntersection|ProviderSecretEnvelopeAndReferenceIsolation|TenantIsolationBoundaries|GatewayExecutionLifecycle|NonStreamEndToEnd|RouteDecisionReplayEnforcesScopeAndSequence|LimitPolicySchemaConstraints|RedisRPMAtomicConcurrencyAndTTL)'
           if APP_ENV=production go run ./cmd/migrate down --path migrations --steps 1 --confirm-development; then
             echo "production down guard unexpectedly allowed rollback"
             exit 1

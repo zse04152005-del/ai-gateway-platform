@@ -33,3 +33,4 @@
 - [P08-T09 故障风暴请求放大](2026-07-31-p08-t09-failure-storm.md)
 - [P09-T01 多级 LimitPolicy Schema](2026-07-31-p09-t01-limit-policy-schema.md)
 - [P09-T02 本地快速限流](2026-07-31-p09-t02-local-fast-limiter.md)
+- [P09-T03 Redis 原子 RPM 限流](2026-07-31-p09-t03-redis-rpm.md)
