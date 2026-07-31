@@ -13,6 +13,9 @@ Status: Implemented by P06-T05
 - `gateway.ObservedChatExecutor` owns best-effort passive-health classification
   around the exact physical attempt; `routing.PassiveHealth` owns the bounded
   sliding-window aggregate and eligibility view.
+- `activehealth.AdapterProber` owns a separate one-token synthetic exchange for
+  cold deployments. It never enters this production Attempt boundary, while
+  `routing.CompositeHealth` combines its state with passive eligibility.
 
 The executor never queries the catalog again. Provider, Deployment, Binding, and LogicalModel come from the same selected catalog fact, avoiding a time-of-check/time-of-use split between routing and adapter construction.
 
@@ -33,3 +36,9 @@ health observation is rejected. It increments a queryable local failure count
 instead. Client cancellation is removed only from the in-memory observation
 context, not from provider execution. Non-stream total latency is recorded, but
 TTFT remains absent rather than being fabricated from whole-response latency.
+
+Active probes deliberately do not call `NonStreamExecutor.Execute`: doing so
+would make synthetic traffic indistinguishable from production attempts and
+could contaminate usage, retries, route decisions, or request records. They use
+the same validated Adapter contract but a dedicated HTTP client, fixed request,
+finite result taxonomy, and independent tracker.

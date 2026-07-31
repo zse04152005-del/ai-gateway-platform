@@ -25,3 +25,4 @@
 - [P08-T01 可解释候选过滤器](2026-07-31-p08-t01-candidate-filter.md)
 - [P08-T02 固定、优先级与加权路由](2026-07-31-p08-t02-routing-policies.md)
 - [P08-T03 被动健康统计](2026-07-31-p08-t03-passive-health.md)
+- [P08-T04 主动健康检查](2026-07-31-p08-t04-active-health.md)

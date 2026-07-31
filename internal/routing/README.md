@@ -70,6 +70,20 @@ The deployment map has deterministic least-recently-observed eviction and a
 hard size bound. `ActiveCatalogHealth` remains an explicit compatibility/test
 implementation and is not presented as measured health.
 
+P08-T04 combines `PassiveHealth` with the independent `activehealth.Tracker`
+through `CompositeHealth`; both signals must allow a deployment. Active state
+uses three consecutive failures to remove a route and two consecutive
+successes to recover it. Unknown or expired active evidence fails open so an
+outage in the monitoring path cannot blackhole every production route; the
+passive signal and the later circuit breaker remain independent safeguards.
+
+`PassiveHealth.NeedsActiveProbe` also acts as the cost gate: any real success,
+429, 5xx, or timeout still present in the passive window suppresses the paid
+active request. Active probes therefore concentrate on cold/backup routes and
+resume automatically when passive samples expire. Cancellation and local
+configuration/protocol failures do not suppress a probe because they are not
+provider-health samples.
+
 Catalog records are structurally and relationally validated before policy
 evaluation, without treating a valid disabled status or a policy mismatch as
 corrupt data. Cross-tenant facts, broken relationships, duplicate deployment

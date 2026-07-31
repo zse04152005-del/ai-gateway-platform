@@ -15,6 +15,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action gateway
 
 进程同时创建唯一的共享上游 HTTP Client。连接/TLS/响应头/非流式总超时、连接池和响应 Header 上限均由 `UPSTREAM_HTTP_*` 配置控制；关闭时主动释放 idle 连接。Client 不读取环境代理、不跟随 Provider 重定向，并在发送前剥离客户端代理链、Cookie 和 hop-by-hop Header。Provider Adapter 生成的供应商认证 Header 保留在独立的出站请求中，入站 Virtual Key 从不复制到该请求。
 
+P08-T04 另建独立的主动健康 HTTP Client/Transport，不复用生产连接池：每 Host 最多 2 个连接，全局调度最多 4 个并发、每批最多 16 个，单次最多 5 秒。探针固定发送 `ping`、最多请求 1 个输出 Token，并标记 `X-AI-Gateway-Traffic-Class: active-health/v1`。它不经过公开 Handler、Virtual Key、业务 Attempt、被动统计或计费记录；有真实被动健康样本的热 Deployment 会暂停主动探针，只检查冷/备用路由。Provider 侧若需要完全独立的额度或账单，仍应为 Probe Secret Reference 配置独立供应商凭据；当前目录模型不会声称同一 Provider 账户内存在虚假的配额隔离。
+
 非流式 Chat 已注册 `mock` 与 `openai` Factory，并按选定 Deployment 构建 Adapter、执行一次共享 HTTP 调用、解析 Normalized Response，再投影为统一 OpenAI-compatible JSON。开发环境的 OpenAI 凭据通过 PostgreSQL Secret Reference 和本地 Envelope Manager 在请求构造最短边界解析；未配置 Resolver 时 fail closed，不允许从环境变量或目录记录读取明文 Provider Key。
 
 ## 数据面认证
@@ -54,7 +56,8 @@ Invoke-RestMethod http://localhost:8080/health/ready
 
 1. 立即将 readiness 置为不可用。
 2. 关闭监听器，拒绝新连接。
-3. 在 `SHUTDOWN_TIMEOUT`（默认 15 秒）内等待普通在途请求完成。
-4. 超时则强制关闭连接并返回非零退出码，确保部署系统能够观察到未完成的排空。
+3. 取消主动健康调度与在途探针，并关闭独立探针连接池。
+4. 在 `SHUTDOWN_TIMEOUT`（默认 15 秒）内等待普通在途请求完成。
+5. 超时则强制关闭连接并返回非零退出码，确保部署系统能够观察到未完成的排空。
 
 SSE/升级连接的主动登记、取消与排空策略属于 P03-T08，本任务不提前伪装为已经覆盖。

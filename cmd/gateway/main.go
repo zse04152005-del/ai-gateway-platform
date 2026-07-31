@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/zse04152005-del/ai-gateway-platform/internal/activehealth"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
@@ -135,11 +136,24 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create passive health tracker: %w", err)
 	}
-	routeSelector, err := routing.NewSelector(modelCatalog, passiveHealth)
+	activeHealthOptions := activehealth.DefaultOptions()
+	activeHealthTracker, err := activehealth.NewTracker(activeHealthOptions, time.Now)
+	if err != nil {
+		return fmt.Errorf("create active health tracker: %w", err)
+	}
+	combinedHealth, err := routing.NewCompositeHealth(passiveHealth, activeHealthTracker)
+	if err != nil {
+		return fmt.Errorf("create composite route health: %w", err)
+	}
+	routeSelector, err := routing.NewSelector(modelCatalog, combinedHealth)
 	if err != nil {
 		return fmt.Errorf("create route selector: %w", err)
 	}
-	chatExecutor, err := newChatExecutor(database, cfg, upstreamClient)
+	adapterRegistry, err := newAdapterRegistry(database, cfg)
+	if err != nil {
+		return fmt.Errorf("create provider adapter registry: %w", err)
+	}
+	chatExecutor, err := proxy.NewNonStreamExecutor(adapterRegistry, upstreamClient)
 	if err != nil {
 		return fmt.Errorf("create chat executor: %w", err)
 	}
@@ -150,6 +164,21 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	executionRecorder, err := execution.NewPostgresRecorder(database, time.Now, rand.Reader)
 	if err != nil {
 		return fmt.Errorf("create execution recorder: %w", err)
+	}
+	probeClient, err := newActiveHealthClient(cfg.UpstreamHTTP)
+	if err != nil {
+		return fmt.Errorf("create isolated active health client: %w", err)
+	}
+	defer probeClient.CloseIdleConnections()
+	activeProber, err := activehealth.NewAdapterProber(adapterRegistry, probeClient, time.Now)
+	if err != nil {
+		return fmt.Errorf("create active health prober: %w", err)
+	}
+	activeScheduler, err := activehealth.NewScheduler(
+		activeHealthOptions, modelCatalog, activeProber, activeHealthTracker, passiveHealth, time.Now,
+	)
+	if err != nil {
+		return fmt.Errorf("create active health scheduler: %w", err)
 	}
 	applicationHandler, err := gateway.NewExecutableHandler(
 		authenticator, modelCatalog, routeSelector, observedChatExecutor, executionRecorder,
@@ -182,6 +211,19 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 		if closeErr := listener.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
 			runErr = errors.Join(runErr, fmt.Errorf("close gateway listener: %w", closeErr))
 		}
+	}()
+	healthContext, stopHealth := context.WithCancel(ctx)
+	healthDone := make(chan struct{})
+	go func() {
+		defer close(healthDone)
+		if schedulerErr := activeScheduler.Run(healthContext); schedulerErr != nil {
+			logger.Error(healthContext, "active health scheduler stopped with error", observability.Fields{},
+				slog.String("errorCode", "ACTIVE_HEALTH_SCHEDULER_FAILED"))
+		}
+	}()
+	defer func() {
+		stopHealth()
+		<-healthDone
 	}()
 
 	logger.Info(ctx, "HTTP server started", observability.Fields{},
@@ -218,6 +260,21 @@ func newChatExecutor(
 	if client == nil {
 		return nil, errors.New("chat executor HTTP client must not be nil")
 	}
+	registry, err := newAdapterRegistry(database, cfg)
+	if err != nil {
+		return nil, err
+	}
+	executor, err := proxy.NewNonStreamExecutor(registry, client)
+	if err != nil {
+		return nil, fmt.Errorf("create non-stream executor: %w", err)
+	}
+	return executor, nil
+}
+
+func newAdapterRegistry(database *sql.DB, cfg config.Config) (*provideradapter.Registry, error) {
+	if database == nil {
+		return nil, errors.New("provider adapter registry database must not be nil")
+	}
 	secretResolver := optionalProviderSecretResolver{}
 	if len(cfg.Security.LocalEnvelopeKey) > 0 {
 		cipher, err := providersecret.NewLocalCipher(
@@ -252,11 +309,30 @@ func newChatExecutor(
 	if err != nil {
 		return nil, fmt.Errorf("create provider adapter registry: %w", err)
 	}
-	executor, err := proxy.NewNonStreamExecutor(registry, client)
-	if err != nil {
-		return nil, fmt.Errorf("create non-stream executor: %w", err)
+	return registry, nil
+}
+
+func newActiveHealthClient(cfg config.UpstreamHTTPConfig) (*upstreamhttp.Client, error) {
+	return upstreamhttp.NewClient(upstreamhttp.Options{
+		ConnectTimeout:         minimumDuration(cfg.ConnectTimeout, 2*time.Second),
+		KeepAlive:              cfg.KeepAlive,
+		TLSHandshakeTimeout:    minimumDuration(cfg.TLSHandshakeTimeout, 2*time.Second),
+		ResponseHeaderTimeout:  minimumDuration(cfg.ResponseHeaderTimeout, 5*time.Second),
+		TotalTimeout:           minimumDuration(cfg.TotalTimeout, 5*time.Second),
+		IdleConnTimeout:        minimumDuration(cfg.IdleConnTimeout, 30*time.Second),
+		ExpectContinueTimeout:  cfg.ExpectContinueTimeout,
+		MaxIdleConns:           16,
+		MaxIdleConnsPerHost:    2,
+		MaxConnsPerHost:        2,
+		MaxResponseHeaderBytes: cfg.MaxResponseHeaderBytes,
+	})
+}
+
+func minimumDuration(value, maximum time.Duration) time.Duration {
+	if value < maximum {
+		return value
 	}
-	return executor, nil
+	return maximum
 }
 
 func bootstrapLogger(service string) *observability.Logger {

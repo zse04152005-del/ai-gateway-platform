@@ -16,6 +16,9 @@ func TestPassiveHealthLowSamplesNeverTriggerDegradedState(t *testing.T) {
 	clock := newPassiveClock()
 	health := mustPassiveHealth(t, passiveTestOptions(10, 0.5, 100), clock.Now)
 	deploymentID := routeUUID(6, 301)
+	if needed, err := health.NeedsActiveProbe(context.Background(), deploymentID); err != nil || !needed {
+		t.Fatalf("NeedsActiveProbe(unknown) = %v/%v", needed, err)
+	}
 	for range 9 {
 		observePassive(t, health, PassiveObservation{
 			DeploymentID: deploymentID, Outcome: PassiveTimedOut, TotalLatency: time.Second,
@@ -28,6 +31,9 @@ func TestPassiveHealthLowSamplesNeverTriggerDegradedState(t *testing.T) {
 	}
 	if healthy, err := health.Healthy(context.Background(), deploymentID); err != nil || !healthy {
 		t.Fatalf("Healthy(low samples) = %v/%v", healthy, err)
+	}
+	if needed, err := health.NeedsActiveProbe(context.Background(), deploymentID); err != nil || needed {
+		t.Fatalf("NeedsActiveProbe(recent samples) = %v/%v", needed, err)
 	}
 
 	observePassive(t, health, PassiveObservation{

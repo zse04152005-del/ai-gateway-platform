@@ -325,6 +325,17 @@ func (health *PassiveHealth) Healthy(ctx context.Context, deploymentID string) (
 	return snapshot.Healthy, nil
 }
 
+// NeedsActiveProbe reports whether the current passive window has no genuine
+// provider health sample. Active checks therefore cover cold routes without
+// spending tokens while real traffic already measures the deployment.
+func (health *PassiveHealth) NeedsActiveProbe(ctx context.Context, deploymentID string) (bool, error) {
+	snapshot, err := health.Snapshot(ctx, deploymentID)
+	if err != nil {
+		return false, err
+	}
+	return snapshot.HealthSampleCount == 0, nil
+}
+
 func (health *PassiveHealth) bucketIndex(startedAt time.Time) int {
 	slot := startedAt.UnixNano() / health.options.BucketWidth.Nanoseconds()
 	index := int(slot % int64(health.bucketCount))
