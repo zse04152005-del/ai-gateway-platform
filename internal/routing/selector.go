@@ -4,8 +4,6 @@ package routing
 import (
 	"context"
 	"errors"
-	"fmt"
-	"sort"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
@@ -61,61 +59,35 @@ type Selection struct {
 
 // Selector performs deterministic minimum viable priority routing.
 type Selector struct {
-	source CandidateSource
-	health HealthReader
+	filter *CandidateFilter
 }
 
 // NewSelector validates dependencies.
 func NewSelector(source CandidateSource, health HealthReader) (*Selector, error) {
-	if source == nil {
-		return nil, errors.New("route candidate source must not be nil")
+	return NewSelectorWithEligibility(source, health, allowAllEligibility{}, allowAllEligibility{})
+}
+
+// NewSelectorWithEligibility installs explicit budget and capacity readers.
+func NewSelectorWithEligibility(source CandidateSource, health HealthReader, budget BudgetReader, capacity CapacityReader) (*Selector, error) {
+	filter, err := NewCandidateFilter(source, health, budget, capacity)
+	if err != nil {
+		return nil, err
 	}
-	if health == nil {
-		return nil, errors.New("route health reader must not be nil")
-	}
-	return &Selector{source: source, health: health}, nil
+	return &Selector{filter: filter}, nil
 }
 
 // Select filters request capabilities, then returns the first healthy candidate
 // by ascending binding priority and stable provider/deployment tie breakers.
 func (selector *Selector) Select(ctx context.Context, request SelectionRequest) (Selection, error) {
-	if selector == nil || selector.source == nil || selector.health == nil {
+	if selector == nil || selector.filter == nil {
 		return Selection{}, errors.New("route selector is not initialized")
 	}
-	if ctx == nil {
-		return Selection{}, errors.New("route selection context must not be nil")
-	}
-	if err := request.Request.Validate(); err != nil {
-		return Selection{}, fmt.Errorf("validate route request: %w", err)
-	}
-	candidates, err := selector.source.ListRouteCandidates(ctx, catalog.RouteQuery{
-		Access: request.Access, LogicalModel: request.Request.LogicalModel,
-	})
+	result, err := selector.filter.Filter(ctx, request)
 	if err != nil {
-		return Selection{}, fmt.Errorf("%w: %w", ErrCandidateSource, err)
+		return Selection{}, err
 	}
-	if len(candidates) > maximumCandidates {
-		return Selection{}, fmt.Errorf("%w: candidate limit exceeded", ErrCandidateSource)
-	}
-	capabilities := requiredRequestCapabilities(request.Request)
-	sort.Slice(candidates, func(left, right int) bool {
-		return candidateLess(candidates[left], candidates[right])
-	})
-	for index := range candidates {
-		candidate := candidates[index]
-		if err := validateCandidate(request, candidate); err != nil {
-			return Selection{}, fmt.Errorf("%w: invalid catalog candidate", ErrCandidateSource)
-		}
-		if !candidate.Deployment.Capabilities.Satisfies(capabilities) {
-			continue
-		}
-		healthy, err := selector.health.Healthy(ctx, candidate.Deployment.ID)
-		if err != nil {
-			return Selection{}, fmt.Errorf("%w: %w", ErrHealthUnavailable, err)
-		}
-		if healthy {
-			return Selection{Candidate: candidate.Clone()}, nil
-		}
+	if len(result.eligible) > 0 {
+		return Selection{Candidate: result.eligible[0].Clone()}, nil
 	}
 	return Selection{}, ErrNoCandidate
 }
@@ -136,19 +108,6 @@ func requiredRequestCapabilities(request adapter.NormalizedRequest) catalog.Capa
 		}
 	}
 	return requirements
-}
-
-func validateCandidate(request SelectionRequest, candidate catalog.RouteCandidate) error {
-	if err := candidate.Validate(); err != nil {
-		return err
-	}
-	if candidate.LogicalModel.TenantID != request.Access.TenantID {
-		return errors.New("route candidate tenant mismatch")
-	}
-	if candidate.LogicalModel.Name != request.Request.LogicalModel {
-		return errors.New("route candidate logical model mismatch")
-	}
-	return nil
 }
 
 func candidateLess(left, right catalog.RouteCandidate) bool {

@@ -36,7 +36,7 @@ func TestSelectorChoosesFirstHealthyCandidateByStablePriority(t *testing.T) {
 	if selection.Candidate.Deployment.ID != middle.Deployment.ID {
 		t.Fatalf("selected deployment = %s, want %s", selection.Candidate.Deployment.ID, middle.Deployment.ID)
 	}
-	if !reflect.DeepEqual(health.calls, []string{high.Deployment.ID, middle.Deployment.ID}) {
+	if !reflect.DeepEqual(health.calls, []string{high.Deployment.ID, middle.Deployment.ID, low.Deployment.ID}) {
 		t.Fatalf("health calls = %#v", health.calls)
 	}
 	if source.query.Access.TenantID != routeTenantID || source.query.Access.ProjectID != routeProjectID || source.query.LogicalModel != "general-chat" {
