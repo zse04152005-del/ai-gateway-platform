@@ -2,7 +2,7 @@
 
 - 日期：2026-07-31
 - 范围：并发故障、最大 Attempt、共享 Deadline、额外费用门禁、顺序重试
-- 结论：实现与本地完整门禁通过，GitHub Actions 证据在远端全绿后补记
+- 结论：实现、本地完整门禁与 GitHub Actions 三 Job 全部通过
 
 ## 1. 放大上界
 
@@ -40,3 +40,7 @@
 - `scripts/dev.ps1 -Action test-integration` 在真实 PostgreSQL 上全量通过。
 
 本机 Windows Go 环境为 `CGO_ENABLED=0` 且无 C 编译器，不能执行本地 `-race`；Linux GitHub Actions 的 `go-quality` race detector 是本任务必须等待的最终并发门禁。
+
+## 5. 远端门禁
+
+提交 `3df027d` 推送后，GitHub Actions [`30624398614`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30624398614) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；其中 Linux `Unit tests with race detector` 明确通过，补齐本机无法执行的并发验证。
