@@ -2,7 +2,7 @@
 
 企业级 AI 网关与模型成本治理平台项目目录。
 
-当前处于：**多级限流与预算预留阶段（P09）**。P00～P08 已完成；P09 已交付 RPM/TPM/并发多层策略 Schema 和可热更新的单实例四层快速保护，下一步实现 Redis 原子 RPM 限流。
+当前处于：**多级限流与预算预留阶段（P09）**。P00～P08 已完成；P09 已交付多层策略 Schema、可热更新的单实例快速保护和 Redis 四层原子 RPM，下一步实现 TPM 预估与结算。
 
 ## 项目核心特色
 
@@ -25,9 +25,9 @@
 
 ## 下一项任务
 
-`P09-T03：实现 Redis 原子 RPM 限流`
+`P09-T04：实现 TPM 预估与结算`
 
-数据面已交付认证后的严格 Chat 解析、无损规范化、Tenant/Project/Key 作用域选路、进程级安全 HTTP 连接池、真实 `mock`/`openai` Adapter 执行、数据库强约束的 Request/Attempt 生命周期和客户端取消传播。P08 已完成最多 3 次、统一 30 秒 Deadline 的有界故障切换；P09-T01/T02 已固定多层 soft/hard 策略，并以约 `2.91µs/op` 的本地四层原子 admission 提供单实例早期保护。下一步增加 Redis Lua 全局 RPM 原子计数、确定 TTL 和时钟边界；本地允许不能跳过分布式门禁。
+数据面已交付认证后的严格 Chat 解析、无损规范化、Tenant/Project/Key 作用域选路、进程级安全 HTTP 连接池、真实 `mock`/`openai` Adapter 执行、数据库强约束的 Request/Attempt 生命周期和客户端取消传播。P09-T01～T03 已固定多层 soft/hard 策略、本地四层 admission，以及 Redis TIME/绝对 TTL 保护的 Lua 原子 RPM；128 路并发 hard=50 严格只有 50 次允许。下一步在调用前按输入与最大输出预占 TPM，并在完成、失败或取消后按实际 Usage 释放差额。
 
 开始实现前先打开《开发执行清单.md》，把当前任务从 `[ ]` 改为 `[~]`；完成并验证后改为 `[x]`，填写日期和证据。
 
