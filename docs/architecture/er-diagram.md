@@ -10,6 +10,10 @@
 erDiagram
     TENANT ||--o{ PROJECT : owns
     PROJECT ||--o{ VIRTUAL_API_KEY : issues
+    TENANT ||--o{ LIMIT_POLICY : owns
+    LIMIT_POLICY o|--o{ TENANT : limits
+    LIMIT_POLICY o|--o{ PROJECT : limits
+    LIMIT_POLICY o|--o{ VIRTUAL_API_KEY : limits
     TENANT ||--o{ LOGICAL_MODEL : exposes
     PROVIDER ||--o{ DEPLOYMENT : operates
     LOGICAL_MODEL ||--o{ MODEL_DEPLOYMENT : maps
@@ -36,6 +40,7 @@ erDiagram
       text name
       text status
       text quota_policy_ref
+      uuid limit_policy_id FK
       bigint version
       timestamptz created_at
       text created_by
@@ -50,6 +55,7 @@ erDiagram
       text name
       text status
       text quota_policy_ref
+      uuid limit_policy_id FK
       bigint version
       timestamptz created_at
       text created_by
@@ -68,6 +74,7 @@ erDiagram
       timestamptz expires_at
       text_array allowed_models
       jsonb limits
+      uuid limit_policy_id FK
       uuid rotated_from_id FK
       timestamptz rotation_grace_expires_at
       timestamptz revoked_at
@@ -77,6 +84,24 @@ erDiagram
       text created_by
       timestamptz updated_at
       text updated_by
+    }
+    LIMIT_POLICY {
+      uuid id PK
+      uuid tenant_id FK
+      text policy_ref
+      text status
+      bigint rpm_soft
+      bigint rpm_hard
+      bigint tpm_soft
+      bigint tpm_hard
+      bigint concurrency_soft
+      bigint concurrency_hard
+      bigint version
+      timestamptz created_at
+      text created_by
+      timestamptz updated_at
+      text updated_by
+      timestamptz disabled_at
     }
     PROVIDER {
       uuid id PK

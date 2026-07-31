@@ -66,6 +66,10 @@ Tenant 内的应用或成本归集边界。预算、模型白名单和虚拟 Key
 
 不可变计量分录。不同 Token 类型和费用分别记录；修正通过 Adjustment，不覆盖历史。
 
+### LimitPolicy
+
+Tenant 拥有的版本化 RPM、TPM 与并发稀疏策略。每类资源分别定义 soft/hard 边界，按 Platform → Tenant → Project → Key 逐字段继承；数据面只消费已经校验的完整 Effective 策略。
+
 ### BudgetReservation
 
 请求执行前为最坏可接受费用创建的临时占用，完成后结算实际费用并释放差额。

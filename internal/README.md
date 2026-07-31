@@ -16,7 +16,8 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `proxy`：普通与 SSE 代理、取消和背压。
 - `sse`：Provider-neutral 有界 SSE framing；统一处理网络分片、多行 data、comment、`[DONE]`、非法字段与行/事件资源上限。
 - `streaming`：上游 Chunk 到下游 Writer 的双上限 FIFO、有限背压等待、CancelCause 和无内容高水位统计；全链路 total/首模型 Token/no-progress 超时控制器精确区分 Header、Provider/Gateway heartbeat 与客户端可见模型 Delta，并固定首包前 failover、首包后 partial-failed 边界；`FailoverGate` 原子串行化备用 Attempt 启动与模型输出提交，禁止首包后跨模型拼接和旧 Attempt 迟到写入；流式 Usage 以 Provider 终态、Provider 累计 Chunk、本地估算三轨保留并拒绝 meter 回退/重复求和；可选 Gateway heartbeat 仅输出固定 SSE comment，平台控制频率、客户端只能 on/off；客户端取消同步关闭上游并记录无内容传播耗时/释放时间。
-- `limits`：RPM/TPM/并发。
+- `limitpolicy`：RPM/TPM/并发 soft/hard 策略、逐字段继承、有效值与来源解析；后续限流器只消费解析结果。
+- `limits`：本地与 Redis 限流执行（P09-T02 起实现）。
 - `budget`：Account、Reservation 和 Settlement。
 - `metering`：Usage Event、Ledger 和价格。
 - `config`：版本化 Snapshot。

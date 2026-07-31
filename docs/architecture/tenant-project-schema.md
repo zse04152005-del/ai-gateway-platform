@@ -4,7 +4,7 @@
 >
 > 日期：2026-07-30
 >
-> 对应任务：P04-T01 / 迁移 `000002_create_tenants_projects`
+> 对应任务：P04-T01、P09-T01 / 迁移 `000002_create_tenants_projects`、`000010_create_limit_policies`
 
 ## 1. 隔离关系
 
@@ -17,6 +17,7 @@ erDiagram
       text name
       text status
       text quota_policy_ref
+      uuid limit_policy_id FK
       bigint version
       timestamptz created_at
       text created_by
@@ -31,6 +32,7 @@ erDiagram
       text name
       text status
       text quota_policy_ref
+      uuid limit_policy_id FK
       bigint version
       timestamptz created_at
       text created_by
@@ -54,12 +56,13 @@ Tenant/Project 使用相同状态集合：
 
 Schema 用 CHECK 保证 `status='disabled'` 与 `disabled_at IS NOT NULL` 等价，避免应用遗漏时间事实。
 
-## 3. 配额引用
+## 3. 限额策略引用
 
-- Tenant `quota_policy_ref=NULL` 表示使用平台默认策略。
-- Project `quota_policy_ref=NULL` 表示继承 Tenant；非空表示项目级覆盖。
-- 当前字段是 1～128 字节的受限 opaque reference，不提前对尚未创建的配额策略表建立伪外键。
-- P09 创建版本化 LimitPolicy 后，通过 expand/migrate/contract 迁移为强类型引用；不得复用该字段存 JSON 策略。
+- Tenant `limit_policy_id=NULL` 表示继承完整平台策略。
+- Project `limit_policy_id=NULL` 表示继承 Tenant 层；非空引用 Tenant 内的稀疏覆盖策略。
+- Tenant 使用 `(id, limit_policy_id)`、Project 使用 `(tenant_id, limit_policy_id)` 复合外键，数据库拒绝跨 Tenant 策略绑定。
+- 旧 `quota_policy_ref` 在 expand 阶段暂时保留；同一行不能同时设置旧引用与新 `limit_policy_id`。迁移完成后由后续独立 contract 迁移删除，不复用它存 JSON。
+- 继承与最终 `soft <= hard` 校验由 `internal/limitpolicy.Resolve` 统一完成，详见 [`limit-policy-schema.md`](limit-policy-schema.md)。
 
 ## 4. 唯一性与命名
 

@@ -4,7 +4,7 @@
 >
 > 日期：2026-07-30
 >
-> 对应任务：P04-T02 / 迁移 `000003_create_virtual_api_keys`
+> 对应任务：P04-T02、P09-T01 / 迁移 `000003_create_virtual_api_keys`、`000010_create_limit_policies`
 
 ## 1. 安全存储边界
 
@@ -72,7 +72,9 @@ stateDiagram-v2
 - 每个值必须是 1～18 位正整数；禁止零、负数、小数、字符串、布尔值和未知键。
 - 空对象表示没有 Key 级字段覆盖；与 `NULL` 的继承意图仍可区分。
 
-`app.valid_virtual_key_limits` 只校验存储形状，实际有效限额合并、最大上限和原子计数由 P09 实现。
+`app.valid_virtual_key_limits` 只校验旧存储形状。P09-T01 新增 Tenant 复合外键保护的 `limit_policy_id`，指向具有独立 soft/hard 边界的稀疏 LimitPolicy；`NULL` 继承 Project 层。expand 阶段保留 `limits`，但数据库禁止同一 Key 同时设置 `limits` 与 `limit_policy_id`。
+
+继承固定为 Platform → Tenant → Project → Key，最终合并及 `soft <= hard` 校验只由 `internal/limitpolicy.Resolve` 完成。旧 JSON 的迁移和删除属于后续 migrate/contract 步骤，详见 [`limit-policy-schema.md`](limit-policy-schema.md)。
 
 ## 6. 审计、并发与索引
 

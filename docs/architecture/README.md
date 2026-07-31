@@ -20,5 +20,6 @@
 - [`retry-classification.md`](retry-classification.md)：错误有限分类、首输出不可逆边界、请求级 Attempt/时间/费用预算和重复计费风险。
 - [`failover-orchestration.md`](failover-orchestration.md)：首次客户端输出前的有界重选、独立 Attempt、父 Request 连续性和多 Attempt 费用事实。
 - [`route-decision-records.md`](route-decision-records.md)：候选过滤、路由评分、重试因果链和最终选择的无内容持久化复盘。
+- [`limit-policy-schema.md`](limit-policy-schema.md)：RPM/TPM/并发 soft/hard 边界、逐字段继承、强类型租户引用和兼容迁移。
 - [`gateway-execution-records.md`](gateway-execution-records.md)：GatewayRequest/RouteAttempt 事实边界、状态机、CAS、追加式证据与 fail-closed 调用顺序。
 - [`stream-cancellation.md`](stream-cancellation.md)：客户端取消到 Adapter/Body/Provider Context 的传播、释放证据和泄漏回归边界。
