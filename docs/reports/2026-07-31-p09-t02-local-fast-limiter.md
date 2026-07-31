@@ -2,7 +2,7 @@
 
 - 日期：2026-07-31
 - 范围：单实例 RPM/TPM/并发、四层原子 admission、配置热更新
-- 结论：实现与完整本地门禁通过；远端门禁待提交后回填
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -36,4 +36,4 @@ RPM/TPM 使用确定 UTC 分钟窗口，时钟回拨不重置旧计数。成功 
 - `scripts/dev.ps1 -Action test-integration`：真实 PostgreSQL 完整集成套件通过；
 - 迁移校验保持 `count=10 latest=000010_create_limit_policies`。
 
-GitHub Actions 三个 Job 在实现提交推送后回填。本机 Windows 为 `CGO_ENABLED=0` 且没有 C 编译器，Linux `go test -race` 是最终并发门禁。
+实现提交为 `c6f4ec1`。GitHub Actions [`30627278273`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30627278273) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；其中 Linux `Unit tests with race detector` 明确通过，补齐本机 `CGO_ENABLED=0` 且无 C 编译器而不能执行的最终并发竞态门禁。
