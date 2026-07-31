@@ -84,5 +84,7 @@ Attempt 2: created → connecting → headers_received → succeeded
 - `different_deployment_only` 无备用时绝不回到 A；
 - 429 先选择不同目标，无替代时才允许固定目标重试；
 - 三次故障严格产生 3 个 Provider 调用、2 个中间终态和 1 个最终终态；
+- 64 路并发故障严格产生 `64 × 3 = 192` 次物理调用，同一 requestId 永不并行且无递归/分支放大；
+- 即使最大 Attempt 提高到 32，共享总 Deadline 仍能提前终止；额外费用被拒绝时只允许首个物理调用；
 - 已知失败 Usage 深拷贝并持久化，原始 Raw Evidence 不进入 Summary；
 - 真实 PostgreSQL 验证父 Request 保持 running、Attempt 编号单调、两个 Usage Summary 均存在和完整事件链。

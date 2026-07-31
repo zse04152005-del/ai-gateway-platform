@@ -30,3 +30,4 @@
 - [P08-T06 重试分类](2026-07-31-p08-t06-retry-classification.md)
 - [P08-T07 首次输出前故障切换](2026-07-31-p08-t07-failover-orchestration.md)
 - [P08-T08 路由决策解释记录](2026-07-31-p08-t08-route-decision-records.md)
+- [P08-T09 故障风暴请求放大](2026-07-31-p08-t09-failure-storm.md)

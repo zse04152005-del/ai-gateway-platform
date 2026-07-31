@@ -14,4 +14,6 @@ P08-T07 为非流式生产请求增加有界故障切换：默认最多 3 个物
 
 P08-T08 在每次 Selector 评估后、创建 Attempt 前追加无内容 RouteDecision，并在每个失败 Attempt 结束前追加 RetryDecision。初选、无候选、排除旧目标、固定目标复用和最终 `no_retry` 都可形成 requestId 因果链。任一必需决策记录失败都 fail closed：初选记录失败不调用 Provider，retry 记录失败则终结当前 Attempt 且不创建下一 Attempt。公开诊断 API 仍由 P16-T06 实现。
 
+P08-T09 用 64 路并发全故障回归锁定线性放大上界：默认三次 Attempt 时精确产生 `3N` 个 Provider 调用和 Attempt，单 requestId 始终串行。推进时钟证明共享总 Deadline 不会按 Attempt 重置；额外费用被拒绝时只保留首个物理调用及其完整计量/决策事实。
+
 其他未实现业务端点返回安全 JSON 404。非 `/v1/*` 未知路径不触发数据库认证，避免扫描流量消耗认证资源。
