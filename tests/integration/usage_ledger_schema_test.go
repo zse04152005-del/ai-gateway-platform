@@ -48,6 +48,7 @@ func TestUsageLedgerSchemaConstraints(t *testing.T) {
 	seedExecutionVirtualKey(ctx, t, database)
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	seedUsagePriceVersion(ctx, t, database, usagePriceVersionID, modelListDeploymentAID, now.Add(-time.Hour))
 	recorder, err := execution.NewPostgresRecorder(database, func() time.Time {
 		now = now.Add(time.Microsecond)
 		return now
@@ -74,17 +75,17 @@ func TestUsageLedgerSchemaConstraints(t *testing.T) {
 
 	_, err = database.ExecContext(ctx, insertUsageLedgerSQL,
 		usageEventOneID, modelListTenantOneID, usageRequestTwoID, nil,
-		"output", int64(13), "provider", observedAt, "integration:usage")
+		"output", int64(13), "provider", usagePriceVersionID, int64(13), observedAt, "integration:usage")
 	expectConstraint(t, err, "usage_ledger_entries_event_id_unique")
 
 	_, err = database.ExecContext(ctx, insertUsageLedgerSQL,
 		usageEventNextID, modelListTenantOneID, usageRequestTwoID, attemptOne.ID,
-		"output", int64(13), "provider", observedAt, "integration:usage")
+		"output", int64(13), "provider", usagePriceVersionID, int64(13), observedAt, "integration:usage")
 	expectConstraint(t, err, "usage_ledger_entries_attempt_fk")
 
 	_, err = database.ExecContext(ctx, insertUsageLedgerSQL,
 		usageEventNextID, modelListTenantTwoID, usageRequestOneID, nil,
-		"output", int64(13), "provider", observedAt, "integration:usage")
+		"output", int64(13), "provider", usagePriceVersionID, int64(13), observedAt, "integration:usage")
 	expectConstraint(t, err, "usage_ledger_entries_request_fk")
 
 	invalidEntries := []struct {
@@ -103,13 +104,15 @@ func TestUsageLedgerSchemaConstraints(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, insertErr := database.ExecContext(ctx, insertUsageLedgerSQL,
 				test.eventID, modelListTenantOneID, usageRequestOneID, attemptOne.ID,
-				test.tokenType, test.quantity, test.source, observedAt, "integration:usage")
+				test.tokenType, test.quantity, test.source, usagePriceVersionID, int64(0),
+				observedAt, "integration:usage")
 			expectConstraint(t, insertErr, test.constraint)
 		})
 	}
 	_, err = database.ExecContext(ctx, insertUsageLedgerSQL,
 		"79000000-0000-4000-8000-000000000204", modelListTenantOneID, usageRequestOneID, attemptOne.ID,
-		"output", int64(9007199254740992), "provider", observedAt, "integration:usage")
+		"output", int64(9007199254740992), "provider", usagePriceVersionID, int64(0),
+		observedAt, "integration:usage")
 	expectConstraint(t, err, "usage_ledger_entries_quantity_valid")
 
 	_, err = database.ExecContext(ctx, `
@@ -145,8 +148,8 @@ func TestUsageLedgerSchemaConstraints(t *testing.T) {
 const insertUsageLedgerSQL = `
 	INSERT INTO app.usage_ledger_entries (
 		event_id, tenant_id, request_id, attempt_id, token_type,
-		quantity, source, observed_at, created_by
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+		quantity, source, price_version_id, amount_micros, observed_at, created_by
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 func insertUsageLedgerEntry(
 	ctx context.Context,
@@ -160,9 +163,26 @@ func insertUsageLedgerEntry(
 	observedAt time.Time,
 ) {
 	t.Helper()
+	insertUsageLedgerEntryWithPrice(ctx, t, database, eventID, tenantID, requestID, attemptID,
+		tokenType, quantity, source, usagePriceVersionID, quantity, observedAt)
+}
+
+func insertUsageLedgerEntryWithPrice(
+	ctx context.Context,
+	t *testing.T,
+	database *sql.DB,
+	eventID, tenantID, requestID string,
+	attemptID any,
+	tokenType string,
+	quantity int64,
+	source, priceVersionID string,
+	amountMicros int64,
+	observedAt time.Time,
+) {
+	t.Helper()
 	_, err := database.ExecContext(ctx, insertUsageLedgerSQL,
 		eventID, tenantID, requestID, attemptID, tokenType,
-		quantity, source, observedAt, "integration:usage")
+		quantity, source, priceVersionID, amountMicros, observedAt, "integration:usage")
 	if err != nil {
 		t.Fatalf("insert usage ledger entry %s: %v", eventID, err)
 	}
@@ -173,7 +193,7 @@ func cleanupUsageLedgerFixtures(t *testing.T, database *sql.DB) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	statements := []string{
-		`TRUNCATE app.usage_ledger_entries RESTART IDENTITY`,
+		`TRUNCATE app.usage_ledger_entries, app.price_version_rates, app.price_versions RESTART IDENTITY`,
 		`DELETE FROM app.route_retry_decisions WHERE request_id LIKE 'integration-usage-%'`,
 		`DELETE FROM app.route_decisions WHERE request_id LIKE 'integration-usage-%'`,
 		`DELETE FROM app.route_attempt_status_events WHERE attempt_id IN (

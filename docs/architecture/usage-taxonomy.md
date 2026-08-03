@@ -22,7 +22,7 @@ Usage Ledger 只接受以下独立计量维度：
 | `image_input` | 输入图像计量 |
 | `image_output` | 输出图像计量 |
 
-这些维度不能机械相加：Cache Read 可能属于 Input 的子集，也可能是独立 Meter；Reasoning 可能属于 Output 的子集。当前 Ledger 只保存原子事实，P10-T03 的 PriceVersion 决定每个维度采用 Token、图像或其他单位及其价格。
+这些维度不能机械相加：Cache Read 可能属于 Input 的子集，也可能是独立 Meter；Reasoning 可能属于 Output 的子集。PriceVersion 为每个可计费维度明确 Token、秒或图像单位及价格；Ledger 仍只保存原子事实。
 
 `total`、`audio`、`image` 和供应商自定义字段不是合法类型。总量是查询投影而不是可重复计费的分录；音频与图像必须保留输入/输出方向；未知 Provider Meter 留在受限 `adapter.UsageEvidence`，在映射发布前不能按已知类型收费。
 

@@ -23,8 +23,8 @@ Migration 7 已把一次客户端调用建模为 `gateway_requests`，把每次�
 
 Tenant/Request/时间索引用于请求账单时间线，Request/Attempt/时间部分索引用于物理调用明细。`created_at` 表示账本落库时间，`observed_at` 保留事实观察时间；异步消费延迟不会覆盖原始时间。
 
-本迁移不包含价格版本、币种、金额和 Adjustment 引用：价格锁定属于 P10-T03，多 Attempt 金额聚合属于 P10-T06，修正引用属于 P10-T08。后续字段只能通过追加迁移扩展，不能修改已应用的 Migration 13。
+Migration 15 追加 `price_version_id` 与 `amount_micros`：每条 Usage 必须通过 `(price_version_id, token_type)` 复合外键锁定一条已发布且在 `observed_at` 生效的费率，币种、区域和单位由不可变 PriceVersion 导出。多 Attempt 金额聚合仍属于 P10-T06，修正引用属于 P10-T08。后续字段只能通过追加迁移扩展，不能修改已应用的 Migration 13。
 
 ## 4. 验证
 
-真实 PostgreSQL 集成测试覆盖 Request 级与 Attempt 级分录、`event_id` 跨 Request 全局重复、Tenant/Request 和 Request/Attempt 错配、数量边界、安全标识符、数据库级 UPDATE/DELETE 拒绝，以及敏感内容列缺失。CI 还执行 `13 -> 12 -> 13`，验证最新迁移可受控回滚和恢复。
+真实 PostgreSQL 集成测试覆盖 Request 级与 Attempt 级分录、`event_id` 跨 Request 全局重复、Tenant/Request 和 Request/Attempt 错配、数量边界、有限分类、价格锁定、数据库级 UPDATE/DELETE 拒绝，以及敏感内容列缺失。每个最新迁移都由 CI 在临时数据库执行受控 down 1 与 up 恢复。

@@ -37,3 +37,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `budget_limit_notice_test.go` 在真实 PostgreSQL 上验证恰好 soft 无告警、超过 soft 返回 remaining/reset/hint、hard 拒绝返回可 `errors.As` 的结构化安全错误、拒绝无 Reservation/Ledger 副作用，以及伪造其他 Tenant 时不返回任何额度或资源身份；CI migration-integration Job 强制执行。
 - `usage_ledger_schema_test.go` 在真实 PostgreSQL 上验证 Request/Attempt 用量归属、Request 级可空 Attempt、`event_id` 跨 Request 全局唯一、Tenant/Request/Attempt 复合外键、整数数量与安全标识符边界、UPDATE/DELETE 追加写保护，以及敏感内容列缺失；CI migration-integration Job 强制执行。
 - `usage_taxonomy_test.go` 将 `internal/metering` 的 9 个 Token 类型与 4 个来源全部写入真实 PostgreSQL，并拒绝大小写、空白、合计类型、无方向媒体类型和供应商自定义值，防止 Go 与 Schema 枚举漂移；CI migration-integration Job 强制执行。
+- `price_version_schema_test.go` 在真实 PostgreSQL 上验证 Deployment/Region/Currency/生效时间、Token/秒/图像单位兼容性、draft→published 单向发布、费率冻结、未生效/未发布/Deployment 错配拒绝，以及历史 Usage 对价格版本和金额的不可变锁定；CI migration-integration Job 强制执行。

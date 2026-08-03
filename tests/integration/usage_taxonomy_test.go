@@ -49,6 +49,7 @@ func TestUsageTaxonomySchemaParity(t *testing.T) {
 	seedExecutionVirtualKey(ctx, t, database)
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	seedUsagePriceVersion(ctx, t, database, usagePriceVersionID, modelListDeploymentAID, now.Add(-time.Hour))
 	recorder, err := execution.NewPostgresRecorder(database, func() time.Time {
 		now = now.Add(time.Microsecond)
 		return now
@@ -96,14 +97,16 @@ func TestUsageTaxonomySchemaParity(t *testing.T) {
 	for index, tokenType := range invalidTokenTypes {
 		_, insertErr := database.ExecContext(ctx, insertUsageLedgerSQL,
 			usageTaxonomyEventID(100+index), modelListTenantOneID, usageTaxonomyRequestID, nil,
-			tokenType, int64(1), string(metering.SourceProvider), now, "integration:usage-taxonomy")
+			tokenType, int64(1), string(metering.SourceProvider), usagePriceVersionID, int64(1),
+			now, "integration:usage-taxonomy")
 		expectConstraint(t, insertErr, "usage_ledger_entries_token_type_valid")
 	}
 	invalidSources := []string{"", "Provider", "provider ", "vendor", "inferred", "billing"}
 	for index, source := range invalidSources {
 		_, insertErr := database.ExecContext(ctx, insertUsageLedgerSQL,
 			usageTaxonomyEventID(200+index), modelListTenantOneID, usageTaxonomyRequestID, nil,
-			string(metering.TokenTypeInput), int64(1), source, now, "integration:usage-taxonomy")
+			string(metering.TokenTypeInput), int64(1), source, usagePriceVersionID, int64(1),
+			now, "integration:usage-taxonomy")
 		expectConstraint(t, insertErr, "usage_ledger_entries_source_valid")
 	}
 }
