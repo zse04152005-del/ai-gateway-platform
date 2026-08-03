@@ -2,7 +2,7 @@
 
 - 日期：2026-08-03
 - 范围：soft 告警、hard 安全错误、剩余额度、重置时间、有限降级提示与跨租户不泄露
-- 结论：实现与本地完整门禁通过；实现提交和 GitHub Actions 证据待补充
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -33,4 +33,4 @@ remaining 使用精确整数：soft 从原 reserve Ledger resulting balances 计
 
 ## 4. 远端证据
 
-实现提交和 GitHub Actions `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 结果将在推送后补充。
+实现提交为 `bb076df`。GitHub Actions [`30794752455`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30794752455) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、真实 PostgreSQL soft/hard 隔离、漏洞和密钥扫描均明确通过。
