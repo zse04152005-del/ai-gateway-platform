@@ -32,3 +32,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `redis_concurrency_test.go` 在真实 Redis 7.4 上以 64 路并发验证四层 ZSET Lease hard 不超卖、soft/最早过期事实、幂等 Acquire/Release、长请求 Renew、正常/失败/取消显式清理、模拟进程退出后的自动过期恢复，以及损坏成员无部分释放；CI migration-integration Job 强制执行。
 - `budget_ledger_schema_test.go` 在真实 PostgreSQL 上验证 Tenant/Project/Key/User/Session 五种独立账户形状与周期唯一性、跨租户复合外键、精确金额边界、Reservation 单向终态、账户版本推进和 Ledger 追加不可变性；CI migration-integration Job 强制执行。
 - `budget_atomic_reservation_test.go` 在真实 PostgreSQL 上以 160 路并发验证 Account version CAS 不突破 hard、soft 事实、幂等重放、冲突 Key、跨租户隐藏、FK 失败全事务回滚，以及受控行锁下 1 次重试封顶与第 2 次成功；CI migration-integration Job 强制执行。
+- `budget_settlement_test.go` 在真实 PostgreSQL 上验证关闭账户多 Attempt 成功、失败超预留/hard、缓存命中、零费用取消和部分费用取消，并以 64 路并发证明同一 Reservation 只结算一次、其余调用读取相同终态 Ledger；冲突重放、未知 Reservation、Request Outcome 不匹配和每账户两条 Ledger 上限同时覆盖；CI migration-integration Job 强制执行。

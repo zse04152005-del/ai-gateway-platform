@@ -27,5 +27,6 @@
 - [`distributed-concurrency-limiter.md`](distributed-concurrency-limiter.md)：四层同 Slot ZSET Lease、显式释放、心跳续租、进程退出过期恢复和 Scope 指纹。
 - [`budget-ledger-schema.md`](budget-ledger-schema.md)：Tenant/Project/Key/User/Session 独立预算账户、整数 micros、幂等预留和追加式账本。
 - [`atomic-budget-reservation.md`](atomic-budget-reservation.md)：PostgreSQL version CAS、hard 双重校验、同事务 Reservation/Ledger、幂等重放和有界冲突重试。
+- [`budget-settlement.md`](budget-settlement.md)：多 Attempt/缓存/失败/取消费用矩阵、差额与超额、关闭账户结算、终态幂等和同事务 Ledger。
 - [`gateway-execution-records.md`](gateway-execution-records.md)：GatewayRequest/RouteAttempt 事实边界、状态机、CAS、追加式证据与 fail-closed 调用顺序。
 - [`stream-cancellation.md`](stream-cancellation.md)：客户端取消到 Adapter/Body/Provider Context 的传播、释放证据和泄漏回归边界。

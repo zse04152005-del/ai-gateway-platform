@@ -42,6 +42,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mi
 - `000009_create_route_decisions` 按 Request 保存每次候选过滤、路由评分、重试判定与最终 Deployment 的无内容解释事实；决策序号可复盘故障切换中的每次重选。
 - `000010_create_limit_policies` 创建 Tenant 内版本化的 RPM/TPM/并发 soft/hard 稀疏策略，并为 Tenant/Project/Key 增加阻止跨租户绑定的强类型引用；旧引用仅在 expand 阶段兼容保留且不能与新引用共存。
 - `000011_create_budget_ledger` 创建 Tenant/Project/Key/User/Session 独立预算账户、幂等预留和只追加账本；金额统一为整数 micros，复合外键隔离租户，触发器固定账户/预留单向生命周期与账本不可变性。
+- `000012_allow_closed_budget_settlement` 保持账户身份、限额和关闭状态不可逆，同时允许关闭后以 version+1 结算仍在途的预留，避免周期关闭吞掉真实费用。
 - Up 重复执行时，迁移引擎返回 no-change 并以成功退出，不重复运行已登记版本。
 - Down 只用于开发与可控回滚，CLI 要求 `--confirm-development`，并在 `APP_ENV=production` 时强制拒绝。
 - 含数据丢失风险的回滚必须单独审批；生产优先采用修复性前滚，不能把 Down 当作常规发布手段。
