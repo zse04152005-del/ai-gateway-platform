@@ -2,7 +2,7 @@
 
 - 日期：2026-08-03
 - 范围：数据库时间过期、批量领取、多实例并发、Account CAS、closed Account 回收、expire 审计事件与结算竞争
-- 结论：实现与本地完整门禁通过；实现提交和 GitHub Actions 证据待补充
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -34,4 +34,4 @@ Settler 读取 Reservation 时增加 `FOR UPDATE`，与 Reaper 统一为 Reserva
 
 ## 4. 远端证据
 
-实现提交和 GitHub Actions `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 结果将在推送后补充。
+实现提交为 `1c65f75`。GitHub Actions [`30792444603`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30792444603) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、真实 PostgreSQL 多实例 Reaper/结算竞争、漏洞和密钥扫描均明确通过。
