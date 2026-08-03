@@ -32,20 +32,22 @@ var (
 
 // ReserveInput is one authenticated request/account hold command.
 type ReserveInput struct {
-	TenantID       string
-	AccountID      string
-	RequestID      string
-	IdempotencyKey string
-	AmountMicros   uint64
-	ExpiresAt      time.Time
-	Actor          string
+	TenantID        string
+	AccountID       string
+	RequestID       string
+	IdempotencyKey  string
+	AmountMicros    uint64
+	ExpiresAt       time.Time
+	Actor           string
+	DegradationHint DegradationHint
 }
 
 // Validate checks stable command shape without consulting mutable account state.
 func (input ReserveInput) Validate() error {
 	if !budgetUUIDPattern.MatchString(input.TenantID) || !budgetUUIDPattern.MatchString(input.AccountID) ||
 		!budgetRefPattern.MatchString(input.RequestID) || !budgetRefPattern.MatchString(input.IdempotencyKey) ||
-		!validAmount(input.AmountMicros) || input.ExpiresAt.IsZero() || !validActor(input.Actor) {
+		!validAmount(input.AmountMicros) || input.ExpiresAt.IsZero() || !validActor(input.Actor) ||
+		!validDegradationHint(input.DegradationHint) {
 		return ErrInvalid
 	}
 	return nil
@@ -80,6 +82,7 @@ type ReserveResult struct {
 	ResultReservedMicros  uint64
 	RemainingHardMicros   uint64
 	SoftLimitExceeded     bool
+	LimitNotice           *LimitNotice
 	Idempotent            bool
 	Attempts              int
 }
@@ -88,13 +91,14 @@ func buildReserveResult(
 	account Account,
 	reservation Reservation,
 	entry LedgerEntry,
+	hint DegradationHint,
 	idempotent bool,
 	attempts int,
 ) (ReserveResult, error) {
 	if account.Validate() != nil || reservation.Validate() != nil || entry.Validate() != nil ||
 		reservation.TenantID != account.Scope.TenantID || reservation.AccountID != account.ID ||
 		entry.TenantID != account.Scope.TenantID || entry.AccountID != account.ID ||
-		entry.ReservationID != reservation.ID || entry.Kind != EntryReserve ||
+		entry.ReservationID != reservation.ID || entry.Kind != EntryReserve || !validDegradationHint(hint) ||
 		entry.IdempotencyKey != reservation.IdempotencyKey || attempts < 1 {
 		return ReserveResult{}, ErrUnavailable
 	}
@@ -103,11 +107,20 @@ func buildReserveResult(
 	if spent < account.HardLimitMicros {
 		remaining = account.HardLimitMicros - spent
 	}
+	softLimitExceeded := spent > account.SoftLimitMicros
+	var notice *LimitNotice
+	if softLimitExceeded {
+		value := newBudgetLimitNotice(LimitSoft, account, spent, hint)
+		if value.Validate() != nil {
+			return ReserveResult{}, ErrUnavailable
+		}
+		notice = &value
+	}
 	return ReserveResult{
 		Reservation: reservation, LedgerEntry: entry, AccountVersion: account.Version,
 		ResultCommittedMicros: entry.ResultCommittedMicros,
 		ResultReservedMicros:  entry.ResultReservedMicros,
-		RemainingHardMicros:   remaining, SoftLimitExceeded: spent > account.SoftLimitMicros,
+		RemainingHardMicros:   remaining, SoftLimitExceeded: softLimitExceeded, LimitNotice: notice,
 		Idempotent: idempotent, Attempts: attempts,
 	}, nil
 }

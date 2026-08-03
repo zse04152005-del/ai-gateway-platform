@@ -31,6 +31,7 @@ func TestReserveInputAndOptionsValidation(t *testing.T) {
 		func() ReserveInput { value := valid; value.AmountMicros = MaximumAmount + 1; return value }(),
 		func() ReserveInput { value := valid; value.ExpiresAt = time.Time{}; return value }(),
 		func() ReserveInput { value := valid; value.Actor = " actor"; return value }(),
+		func() ReserveInput { value := valid; value.DegradationHint = "switch_tenant"; return value }(),
 	}
 	for index, input := range invalid {
 		if err := input.Validate(); !errors.Is(err, ErrInvalid) {
@@ -67,23 +68,25 @@ func TestReserveResultUsesOriginalLedgerBalances(t *testing.T) {
 		ReservedDeltaMicros: 100, ResultCommittedMicros: 100, ResultReservedMicros: 800,
 		OccurredAt: account.CreatedAt, CreatedBy: "test:budget",
 	}
-	result, err := buildReserveResult(account, reservation, entry, true, 3)
+	result, err := buildReserveResult(account, reservation, entry, DegradeLowerCostModel, true, 3)
 	if err != nil {
 		t.Fatalf("buildReserveResult() error = %v", err)
 	}
 	if !result.Idempotent || result.Attempts != 3 || result.AccountVersion != 7 ||
 		result.ResultCommittedMicros != 100 || result.ResultReservedMicros != 800 ||
-		result.RemainingHardMicros != 100 || !result.SoftLimitExceeded {
+		result.RemainingHardMicros != 100 || !result.SoftLimitExceeded || result.LimitNotice == nil ||
+		result.LimitNotice.Level != LimitSoft || result.LimitNotice.RemainingMicros != 100 ||
+		result.LimitNotice.DegradationHint != DegradeLowerCostModel {
 		t.Fatalf("reserve result = %+v", result)
 	}
 	entry.ResultCommittedMicros = 0
 	entry.ResultReservedMicros = 800
-	result, err = buildReserveResult(account, reservation, entry, false, 1)
-	if err != nil || result.SoftLimitExceeded {
+	result, err = buildReserveResult(account, reservation, entry, "", false, 1)
+	if err != nil || result.SoftLimitExceeded || result.LimitNotice != nil {
 		t.Fatalf("at soft boundary result = %+v/%v", result, err)
 	}
 	entry.ReservationID = "bad"
-	if _, err := buildReserveResult(account, reservation, entry, false, 1); !errors.Is(err, ErrUnavailable) {
+	if _, err := buildReserveResult(account, reservation, entry, "", false, 1); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("invalid facts error = %v", err)
 	}
 }

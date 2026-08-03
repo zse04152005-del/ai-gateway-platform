@@ -127,7 +127,7 @@ func (reserver *PostgresReserver) reserveOnce(
 	}
 	spent := account.CommittedMicros + account.ReservedMicros
 	if input.AmountMicros > account.HardLimitMicros || spent > account.HardLimitMicros-input.AmountMicros {
-		return ReserveResult{}, false, ErrBudgetExceeded
+		return ReserveResult{}, false, newBudgetExceededError(account, input.DegradationHint)
 	}
 	amount, ok := signedExactAmount(input.AmountMicros)
 	if !ok {
@@ -205,7 +205,7 @@ func (reserver *PostgresReserver) reserveOnce(
 	if err != nil {
 		return ReserveResult{}, false, newReserveError(ErrUnavailable, err)
 	}
-	result, err := buildReserveResult(updated, reservation, entry, false, attempt)
+	result, err := buildReserveResult(updated, reservation, entry, input.DegradationHint, false, attempt)
 	return result, false, err
 }
 
@@ -245,7 +245,7 @@ func loadExistingReserve(
 	if err != nil {
 		return ReserveResult{}, false, newReserveError(ErrUnavailable, err)
 	}
-	result, err := buildReserveResult(account, reservation, entry, true, attempt)
+	result, err := buildReserveResult(account, reservation, entry, input.DegradationHint, true, attempt)
 	return result, true, err
 }
 

@@ -28,7 +28,7 @@ UPDATE 由 PostgreSQL 行锁串行化竞争者，条件在取得锁后重新检�
 
 ## 3. hard、soft 与时间
 
-hard 是 admission 条件，超过时返回 `ErrBudgetExceeded`，不增加 version，也不创建任何事实。soft 不拒绝；成功结果在 resulting committed+reserved 严格大于 soft 时设置 `SoftLimitExceeded`，等于 soft 仍未超过。
+hard 是 admission 条件，超过时返回可安全解析的 `HardLimitError`，不增加 version，也不创建任何事实。soft 不拒绝；成功结果在 resulting committed+reserved 严格大于 soft 时设置 `SoftLimitExceeded` 并附带 `LimitNotice`，等于 soft 仍未超过。remaining、reset 和有限降级提示的完整契约见 [`budget-limit-signals.md`](budget-limit-signals.md)。
 
 余额更新时间不使用协程预先取得的主机时间。UPDATE 在真正取得行锁后写入 `GREATEST(updated_at, clock_timestamp())`，Reservation created/updated 和 Ledger occurred 复用 RETURNING 的同一个数据库权威时间，从而在高并发、调度延迟或细微主机时钟偏差下保持单调。
 
