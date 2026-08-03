@@ -2,7 +2,7 @@
 
 - 日期：2026-08-03
 - 范围：多 Attempt、缓存命中、失败/取消费用、差额释放、超额保留、关闭账户结算与终态幂等
-- 结论：实现与本地完整门禁通过；实现提交和 GitHub Actions 证据待推送后补充
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -36,4 +36,4 @@ Migration `000012_allow_closed_budget_settlement` 允许 closed Account 继续�
 
 ## 4. 远端证据
 
-实现提交、GitHub Actions `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 结果，以及清单证据提交将在远端门禁完成后补充。
+实现提交为 `69b8143`。GitHub Actions [`30790598711`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30790598711) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、真实 PostgreSQL 结算场景、Migration `12 → 11 → 12`、漏洞与密钥扫描均明确通过。
