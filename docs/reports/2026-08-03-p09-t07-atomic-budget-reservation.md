@@ -2,7 +2,7 @@
 
 - 日期：2026-08-03
 - 范围：PostgreSQL Account version CAS、hard admission、幂等 Reservation 与 reserve Ledger
-- 结论：实现、专项与本地完整门禁通过；GitHub Actions 证据待提交后回填
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -29,4 +29,4 @@
 - instrumented budget 包合并单元与真实 PostgreSQL counter 后覆盖率 82.0%；
 - `scripts/dev.ps1 -Action test-integration`：真实 PostgreSQL/Redis 完整集成套件通过；
 - `scripts/dev.ps1 -Action check`：模块校验、格式、双标签 lint、全量单测、构建、govulncheck、迁移顺序、Actions 语法和本地密钥扫描全部通过；
-- 实现提交及 GitHub Actions 三 Job：待提交后回填。
+- 实现提交为 `cfb3507`。GitHub Actions [`30782615085`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30782615085) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、CI PostgreSQL 160 路原子预留、Migration `11 → 10 → 11` 和密钥扫描均明确通过。
