@@ -17,7 +17,7 @@ Migration 7 已把一次客户端调用建模为 `gateway_requests`，把每次�
 - `event_id` 使用 UUID，并由全局唯一约束保证同一事件最多形成一条有效分录；后续 Metering Consumer 可以用唯一冲突实现至少一次投递下的幂等。
 - 表只允许 `INSERT`。数据库触发器对 `UPDATE` 和 `DELETE` 返回 SQLSTATE `23514`；修正必须在 P10-T08 通过新的 Adjustment 分录表达。
 - `quantity` 使用精确 `bigint`，范围为 `1..2^53-1`，避免 JSON/JavaScript 控制面交换时失真，也拒绝没有事实价值的零数量分录。
-- `token_type` 与 `source` 当前只接受长度不超过 64 的小写安全标识符。P10-T02 将通过后续迁移收紧为领域枚举，本迁移不抢先固化其完整集合。
+- Migration 13 先让 `token_type` 与 `source` 接受最长 64 字符的小写安全标识符；Migration 14 再由 P10-T02 收紧为 `internal/metering` 定义的有限领域枚举，未知历史值会阻止迁移。
 
 ## 3. 查询与扩展边界
 

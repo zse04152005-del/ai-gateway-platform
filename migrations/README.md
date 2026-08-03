@@ -44,6 +44,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mi
 - `000011_create_budget_ledger` 创建 Tenant/Project/Key/User/Session 独立预算账户、幂等预留和只追加账本；金额统一为整数 micros，复合外键隔离租户，触发器固定账户/预留单向生命周期与账本不可变性。
 - `000012_allow_closed_budget_settlement` 保持账户身份、限额和关闭状态不可逆，同时允许关闭后以 version+1 结算仍在途的预留，避免周期关闭吞掉真实费用。
 - `000013_create_usage_ledger` 在既有 Request/Attempt 事实根上创建只追加 Usage Ledger，以全局唯一 `event_id` 幂等、复合外键固定 Tenant/Request/Attempt 归属，并允许缓存等 Request 级事实不绑定物理 Attempt。
+- `000014_constrain_usage_taxonomy` 将 Ledger Token 类型收紧为九个独立输入/输出/缓存/推理/音频/图像维度，并将来源收紧为 provider/estimated/reconciled/adjustment；未知历史值会阻止约束验证而不会被静默归类。
 - Up 重复执行时，迁移引擎返回 no-change 并以成功退出，不重复运行已登记版本。
 - Down 只用于开发与可控回滚，CLI 要求 `--confirm-development`，并在 `APP_ENV=production` 时强制拒绝。
 - 含数据丢失风险的回滚必须单独审批；生产优先采用修复性前滚，不能把 Down 当作常规发布手段。

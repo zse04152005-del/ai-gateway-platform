@@ -96,8 +96,8 @@ func TestUsageLedgerSchemaConstraints(t *testing.T) {
 		constraint string
 	}{
 		{name: "zero quantity", eventID: "79000000-0000-4000-8000-000000000201", tokenType: "output", quantity: 0, source: "provider", constraint: "usage_ledger_entries_quantity_valid"},
-		{name: "unsafe token type", eventID: "79000000-0000-4000-8000-000000000202", tokenType: "Input", quantity: 1, source: "provider", constraint: "usage_ledger_entries_token_type_format"},
-		{name: "unsafe source", eventID: "79000000-0000-4000-8000-000000000203", tokenType: "output", quantity: 1, source: "provider/raw", constraint: "usage_ledger_entries_source_format"},
+		{name: "unsafe token type", eventID: "79000000-0000-4000-8000-000000000202", tokenType: "Input", quantity: 1, source: "provider", constraint: "usage_ledger_entries_token_type_valid"},
+		{name: "unsafe source", eventID: "79000000-0000-4000-8000-000000000203", tokenType: "output", quantity: 1, source: "provider/raw", constraint: "usage_ledger_entries_source_valid"},
 	}
 	for _, test := range invalidEntries {
 		t.Run(test.name, func(t *testing.T) {
