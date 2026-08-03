@@ -350,10 +350,10 @@ func cleanupBudgetLedgerFixtures(t *testing.T, database *sql.DB) {
 		args  []any
 	}{
 		{"budget tables", `TRUNCATE app.budget_ledger_entries, app.budget_reservations, app.budget_accounts RESTART IDENTITY`, nil},
-		{"route decisions", `DELETE FROM app.route_decisions WHERE request_id = $1`, []any{budgetRequestID}},
-		{"request events", `DELETE FROM app.gateway_request_status_events WHERE request_id = $1`, []any{budgetRequestID}},
-		{"route attempts", `DELETE FROM app.route_attempts WHERE request_id = $1`, []any{budgetRequestID}},
-		{"gateway request", `DELETE FROM app.gateway_requests WHERE id = $1`, []any{budgetRequestID}},
+		{"route decisions", `DELETE FROM app.route_decisions WHERE request_id LIKE 'integration-budget-%'`, nil},
+		{"request events", `DELETE FROM app.gateway_request_status_events WHERE request_id LIKE 'integration-budget-%'`, nil},
+		{"route attempts", `DELETE FROM app.route_attempts WHERE request_id LIKE 'integration-budget-%'`, nil},
+		{"gateway request", `DELETE FROM app.gateway_requests WHERE id LIKE 'integration-budget-%'`, nil},
 		{"keys", `DELETE FROM app.virtual_api_keys WHERE tenant_id IN ($1, $2)`, []any{budgetTenantOneID, budgetTenantTwoID}},
 		{"logical models", `DELETE FROM app.logical_models WHERE tenant_id IN ($1, $2)`, []any{budgetTenantOneID, budgetTenantTwoID}},
 		{"projects", `DELETE FROM app.projects WHERE tenant_id IN ($1, $2)`, []any{budgetTenantOneID, budgetTenantTwoID}},
