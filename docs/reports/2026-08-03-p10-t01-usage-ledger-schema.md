@@ -2,7 +2,7 @@
 
 - 日期：2026-08-03
 - 范围：Request/Attempt 计量归属、Usage Ledger 追加写入、全局事件幂等与租户隔离
-- 结论：实现与本地完整门禁通过；实现提交和 GitHub Actions 证据待补充
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -31,4 +31,4 @@ Usage Ledger 只允许追加：数据库触发器统一拒绝 UPDATE/DELETE 并�
 
 ## 4. 远端证据
 
-实现提交和 GitHub Actions `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 结果将在推送后补充。
+实现提交为 `100cb69`。GitHub Actions [`30797932297`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30797932297) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、Migration `13→12→13`、真实 PostgreSQL Usage Ledger 约束、漏洞和密钥扫描均明确通过。
