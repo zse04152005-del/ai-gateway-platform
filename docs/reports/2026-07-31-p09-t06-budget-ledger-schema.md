@@ -1,8 +1,8 @@
 # P09-T06 预算账本与预留表验收报告
 
-- 日期：2026-07-31
+- 日期：2026-08-03
 - 范围：五维预算账户、幂等预留、追加式账本、Migration 11
-- 结论：实现、专项、Migration lifecycle 与本地完整门禁通过；GitHub Actions 证据待提交后回填
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -41,4 +41,4 @@
 - Migration `11 → 10 → 11`：production down guard 明确拒绝；开发库 `11 dirty=false → 10 dirty=false → 11 dirty=false`，恢复后 Schema 专项再次通过；
 - `scripts/dev.ps1 -Action test-integration`：真实 PostgreSQL/Redis 完整集成套件通过；
 - `scripts/dev.ps1 -Action check`：模块校验、格式、双标签 lint、全量单测、构建、govulncheck、迁移顺序、Actions 语法和本地密钥扫描全部通过；迁移校验为 `count=11 latest=000011_create_budget_ledger`；
-- 实现提交及 GitHub Actions 三 Job：待提交后回填。
+- 实现提交为 `d2250b4`。GitHub Actions [`30780815678`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30780815678) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、Migration `11 → 10 → 11`、真实 PostgreSQL 预算约束专项和密钥扫描均明确通过。
