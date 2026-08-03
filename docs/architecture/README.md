@@ -30,5 +30,6 @@
 - [`budget-settlement.md`](budget-settlement.md)：多 Attempt/缓存/失败/取消费用矩阵、差额与超额、关闭账户结算、终态幂等和同事务 Ledger。
 - [`expired-reservation-reaper.md`](expired-reservation-reaper.md)：数据库时间过期边界、SKIP LOCKED 多实例分片、Account CAS、expire 审计事件和结算竞争。
 - [`budget-limit-signals.md`](budget-limit-signals.md)：soft/hard 同构额度元数据、周期重置时间、有限降级提示、安全错误映射和跨租户不泄露。
+- [`usage-ledger-schema.md`](usage-ledger-schema.md)：Request/Attempt 用量归属、全局事件幂等、整数数量和数据库级追加写保护。
 - [`gateway-execution-records.md`](gateway-execution-records.md)：GatewayRequest/RouteAttempt 事实边界、状态机、CAS、追加式证据与 fail-closed 调用顺序。
 - [`stream-cancellation.md`](stream-cancellation.md)：客户端取消到 Adapter/Body/Provider Context 的传播、释放证据和泄漏回归边界。
