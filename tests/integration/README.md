@@ -33,3 +33,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `budget_ledger_schema_test.go` 在真实 PostgreSQL 上验证 Tenant/Project/Key/User/Session 五种独立账户形状与周期唯一性、跨租户复合外键、精确金额边界、Reservation 单向终态、账户版本推进和 Ledger 追加不可变性；CI migration-integration Job 强制执行。
 - `budget_atomic_reservation_test.go` 在真实 PostgreSQL 上以 160 路并发验证 Account version CAS 不突破 hard、soft 事实、幂等重放、冲突 Key、跨租户隐藏、FK 失败全事务回滚，以及受控行锁下 1 次重试封顶与第 2 次成功；CI migration-integration Job 强制执行。
 - `budget_settlement_test.go` 在真实 PostgreSQL 上验证关闭账户多 Attempt 成功、失败超预留/hard、缓存命中、零费用取消和部分费用取消，并以 64 路并发证明同一 Reservation 只结算一次、其余调用读取相同终态 Ledger；冲突重放、未知 Reservation、Request Outcome 不匹配和每账户两条 Ledger 上限同时覆盖；CI migration-integration Job 强制执行。
+- `budget_reaper_test.go` 在真实 PostgreSQL 上以 8 个并发 Worker 和 batch=3 验证 16 个过期 Reservation 的 `FOR UPDATE SKIP LOCKED` 分片回收、唯一 expire Ledger/EventID、未来 hold 保留、closed Account 释放和重复扫描空结果，并证明 Settler/Reaper 同时竞争时只能产生一个终态；CI migration-integration Job 强制执行。

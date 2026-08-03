@@ -41,4 +41,4 @@ overage  = max(actual - reserved, 0)
 
 Migration `000011_create_budget_ledger` 还为 `gateway_requests (tenant_id, id)` 增加唯一约束，使 Reservation 的 Request 外键同时验证 Tenant。Down 会先移除触发器和三张预算表，再移除该约束；它会丢失所有预算事实，只能用于明确批准的开发回滚。
 
-数据库约束负责租户隔离、合法 Scope、金额精度、单向状态和追加性。数据库角色权限、告警、过期 Reaper、原子并发 admission 与多 Attempt 结算分别由后续任务实现，不能以直接 SQL 绕过这些边界。
+数据库约束负责租户隔离、合法 Scope、金额精度、单向状态和追加性。原子 admission、多 Attempt 结算与过期 Reaper 已分别在 [`atomic-budget-reservation.md`](atomic-budget-reservation.md)、[`budget-settlement.md`](budget-settlement.md) 和 [`expired-reservation-reaper.md`](expired-reservation-reaper.md) 实现；数据库角色权限与告警仍由后续任务补齐，所有写路径都不能以直接 SQL 绕过这些边界。

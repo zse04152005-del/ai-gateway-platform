@@ -198,7 +198,8 @@ func loadBudgetReservation(
 	return scanBudgetReservation(queryer.QueryRowContext(ctx, `
 		SELECT `+budgetReservationColumns+`
 		FROM app.budget_reservations
-		WHERE tenant_id = $1 AND account_id = $2 AND id = $3`, tenantID, accountID, reservationID))
+		WHERE tenant_id = $1 AND account_id = $2 AND id = $3
+		FOR UPDATE`, tenantID, accountID, reservationID))
 }
 
 func loadBudgetRequestStatus(
