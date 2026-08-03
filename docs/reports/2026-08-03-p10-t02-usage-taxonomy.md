@@ -2,7 +2,7 @@
 
 - 日期：2026-08-03
 - 范围：有限 Token 类型、Provider/估算/对账/修正来源、Go/PostgreSQL 契约一致性
-- 结论：实现与本地完整门禁通过；实现提交和 GitHub Actions 证据待补充
+- 结论：实现、本地完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -37,4 +37,4 @@ Down 只移除有限枚举并恢复 Migration 13 的安全格式约束，不删�
 
 ## 5. 远端证据
 
-实现提交和 GitHub Actions `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 结果将在推送后补充。
+实现提交为 `7464d70`。GitHub Actions [`30801049817`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30801049817) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、Migration `14→13→14`、真实 PostgreSQL Taxonomy parity、漏洞和密钥扫描均明确通过。
