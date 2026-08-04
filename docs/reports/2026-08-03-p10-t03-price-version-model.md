@@ -2,7 +2,7 @@
 
 - 日期：2026-08-03
 - 范围：生效时间、区域、币种、计费单位、Token 类型与历史请求价格锁定
-- 结论：实现与本机完整门禁通过；提交和远端证据待完成
+- 结论：实现、本机完整门禁与 GitHub Actions 三个 Job 全部通过
 
 ## 1. 实现结果
 
@@ -34,4 +34,4 @@ Usage Ledger 新增必填 `price_version_id` 和 `amount_micros`，并以 `(pric
 
 ## 5. 远端证据
 
-实现提交 SHA 与 GitHub Actions 三个 Job 结果将在推送并全绿后补录。
+实现提交为 `460f2f5`。GitHub Actions [`30805483073`](https://github.com/zse04152005-del/ai-gateway-platform/actions/runs/30805483073) 的 `go-quality`、`migration-integration`、`config-and-secrets` 三个 Job 全绿；Linux race、Migration `15→14→15`、真实 PostgreSQL PriceVersion 历史锁定、漏洞和密钥扫描均明确通过。
