@@ -103,7 +103,7 @@ jobs:
             redpanda start --overprovisioned --smp=1 --memory=1G --reserve-memory=0M \
             --node-id=0 --check=false \
             --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092 \
-            --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+            --advertise-kafka-addr=internal://localhost:9092,external://localhost:19092
           for attempt in {1..30}; do
             if docker exec ai-gateway-ci-redpanda rpk cluster health --exit-when-healthy >/dev/null 2>&1; then
               break
