@@ -10,3 +10,5 @@
 - Only a published version effective at `observed_at` can price a fact. Missing rates fail closed, and a historical ledger row keeps the exact published version identity.
 
 Provider-specific fields that cannot yet map to this taxonomy remain in bounded `adapter.UsageEvidence` and must not be charged as a known type. Image dimensions are defined now for later multimodal pricing even though the current chat Adapter exposes only audio extensions.
+
+`UsageEvent` is the immutable version-1 publication contract. One positive Token dimension becomes one event; missing and explicit zero values produce no billable fact. Gateway publication accepts only `provider → usage.observed` and `estimated → usage.estimated`. Reconciliation and adjustment identities belong to later trusted workflows. Event payloads carry content-free execution/trace attribution and never carry prompts, responses, credentials, endpoints, or raw provider evidence.

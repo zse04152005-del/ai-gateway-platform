@@ -46,6 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mi
 - `000013_create_usage_ledger` 在既有 Request/Attempt 事实根上创建只追加 Usage Ledger，以全局唯一 `event_id` 幂等、复合外键固定 Tenant/Request/Attempt 归属，并允许缓存等 Request 级事实不绑定物理 Attempt。
 - `000014_constrain_usage_taxonomy` 将 Ledger Token 类型收紧为九个独立输入/输出/缓存/推理/音频/图像维度，并将来源收紧为 provider/estimated/reconciled/adjustment；未知历史值会阻止约束验证而不会被静默归类。
 - `000015_create_price_versions` 创建 Deployment/Region/Currency/生效时间价格版本和分 Token 类型费率；发布后身份与费率不可变，Usage Ledger 以复合外键锁定已生效版本和费率，并保存整数 micros 金额。
+- `000016_create_usage_event_outbox` 创建 Attempt 终态 UsageEvent 事务 Outbox、Request/Attempt/Deployment 可信复合引用、逐维度唯一事实、不可变业务字段和 `pending/publishing/published` 租约状态机；Down 会删除全部未消费或已发布事件及状态，只能在明确获批的开发回滚中执行。
 - Up 重复执行时，迁移引擎返回 no-change 并以成功退出，不重复运行已登记版本。
 - Down 只用于开发与可控回滚，CLI 要求 `--confirm-development`，并在 `APP_ENV=production` 时强制拒绝。
 - 含数据丢失风险的回滚必须单独审批；生产优先采用修复性前滚，不能把 Down 当作常规发布手段。

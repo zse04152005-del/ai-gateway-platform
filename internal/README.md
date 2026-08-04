@@ -20,6 +20,7 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `limits`：单实例四层原子 RPM/TPM/并发 admission、幂等并发 Lease 和版本化热更新；Redis RPM 使用服务器权威分钟、单 Hash Lua 的四层先检查后递增和绝对 TTL，Redis 并发由 P09-T05 继续叠加。
 - `budget`：Account、Reservation 和 Settlement。
 - `metering`：Usage Event、Ledger 和价格。
+- `meteringoutbox`：Attempt 终态事务 Outbox 的有限批次 Kafka Relay、租约恢复和安全重试状态机。
 - `config`：版本化 Snapshot。
 - `security`：脱敏、密钥端口和 SSRF 防护。
 - `apierror`：内部 cause 与公开 HTTP 错误定义的安全隔离、统一渲染和重试元数据。
@@ -42,4 +43,5 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `upstreamhttp`：进程级 Provider HTTP Client、TLS/连接/首部/总超时、连接池复用、禁止重定向与出站 Header 信任边界；普通与流式 Client 共享 Transport，流式入口不施加普通响应的固定 Body 总超时。
 - `proxy`：一个已选 Deployment 对应一次 Adapter/HTTP/Parse Attempt；只返回 Normalized Response 或安全分类，不内置重试。
 - `execution`：可信 GatewayRequest、独立 RouteAttempt、乐观版本状态迁移、追加式状态证据和无内容 Usage Summary 的 PostgreSQL 记录边界。
+- `meteringoutbox`：从 PostgreSQL 不可变 UsageEvent Outbox 向预创建 Kafka Topic 的至少一次后台发布；不阻塞请求热路径，稳定事件 ID 留给消费者幂等。
 - `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

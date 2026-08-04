@@ -23,6 +23,12 @@ P08-T05 在进程内为每个实际调用过的 Deployment 维护独立 Circuit�
 
 非流式 Chat 已注册 `mock` 与 `openai` Factory，并按选定 Deployment 构建 Adapter、执行一次共享 HTTP 调用、解析 Normalized Response，再投影为统一 OpenAI-compatible JSON。开发环境的 OpenAI 凭据通过 PostgreSQL Secret Reference 和本地 Envelope Manager 在请求构造最短边界解析；未配置 Resolver 时 fail closed，不允许从环境变量或目录记录读取明文 Provider Key。
 
+## 用量事件发布
+
+Attempt 完成会把 Normalized Usage 与终态记录原子写入 PostgreSQL Outbox。Gateway 后台 Relay 再以有限批次发布到预创建的 `ai-gateway.usage.v1` Topic，因此请求热路径不等待 Kafka 或 ClickHouse。发布失败持久化为安全错误码并指数退避；进程退出遗留的租约过期后可由任一实例重领。Kafka Key 固定为事件 ID，消费者必须按该 ID 幂等处理至少一次交付。
+
+本地 Compose 的 `redpanda-init` 会幂等创建 6 分区 Topic；若使用外部 Kafka/Redpanda，运维必须在接收流量前自行创建 Topic。`KAFKA_BROKERS` 只配置 Broker `host:port` 列表，不改变 Topic 名称。
+
 ## 数据面认证
 
 - 每个 `/v1/*` 请求必须恰好包含一个 `Authorization: Bearer <virtual-credential>`。
@@ -61,7 +67,8 @@ Invoke-RestMethod http://localhost:8080/health/ready
 1. 立即将 readiness 置为不可用。
 2. 关闭监听器，拒绝新连接。
 3. 取消主动健康调度与在途探针，并关闭独立探针连接池。
-4. 在 `SHUTDOWN_TIMEOUT`（默认 15 秒）内等待普通在途请求完成。
-5. 超时则强制关闭连接并返回非零退出码，确保部署系统能够观察到未完成的排空。
+4. 停止后台 Usage Outbox Relay，再关闭 Kafka Producer；未 ACK 的行保持或恢复为可重领状态。
+5. 在 `SHUTDOWN_TIMEOUT`（默认 15 秒）内等待普通在途请求完成。
+6. 超时则强制关闭连接并返回非零退出码，确保部署系统能够观察到未完成的排空。
 
 SSE/升级连接的主动登记、取消与排空策略属于 P03-T08，本任务不提前伪装为已经覆盖。

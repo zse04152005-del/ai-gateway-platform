@@ -13,6 +13,7 @@
 - 所有更新带 `status + version` Compare-And-Swap。数据库 Trigger 同时强制合法迁移、身份不可变、版本单调和时间关系，旧协程不能覆盖终态。
 - 两张 append-only status event 表由 Trigger 自动写入，每个版本都有 from/to/time/reason 证据。
 - 成功、失败、取消和部分失败 Attempt 都可保存各自已知的 Usage Summary，只保留 presence-preserving Token Count、来源和完整性；Provider Raw Evidence 在 P10 进入不可变账本。
+- `CompleteAttempt` 与 `CompleteAttemptForRetry` 在同一事务中把每个正数量 Usage 维度写入不可变 Outbox；Attempt/Request 终态与发布事实只能一起提交或一起回滚，请求线程不执行 Kafka 或 ClickHouse I/O。
 
 记录依赖在上游调用前不可用时 Gateway fail closed，防止产生“已经向 Provider 付费但系统完全没有 Attempt 身份”的调用。上游结束后的最终写入失败会返回统一记录依赖错误并留下可恢复的 active Attempt，P13 Reconciler/Runbook 负责识别和收敛。
 

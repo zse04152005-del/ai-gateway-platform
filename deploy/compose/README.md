@@ -24,6 +24,8 @@
 | `postgres-data` | PostgreSQL `/var/lib/postgresql/data` | 租户、配置、账本等事务数据 |
 | `redis-data` | Redis `/data` | AOF 与本地缓存状态 |
 | `redpanda-data` | Redpanda `/var/lib/redpanda/data` | Kafka 日志与元数据 |
+
+`redpanda-init` 在 Broker 健康后幂等创建 6 分区的 `ai-gateway.usage.v1` Topic；Gateway 只向已配置 Topic 发布，不依赖生产 Broker 的自动建 Topic 设置。
 | `clickhouse-data` | ClickHouse `/var/lib/clickhouse` | 分析事件与聚合数据 |
 | `prometheus-data` | Prometheus `/prometheus` | 指标时序数据 |
 | `grafana-data` | Grafana `/var/lib/grafana` | Dashboard、用户和插件状态 |

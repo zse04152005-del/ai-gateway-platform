@@ -38,3 +38,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `usage_ledger_schema_test.go` 在真实 PostgreSQL 上验证 Request/Attempt 用量归属、Request 级可空 Attempt、`event_id` 跨 Request 全局唯一、Tenant/Request/Attempt 复合外键、整数数量与安全标识符边界、UPDATE/DELETE 追加写保护，以及敏感内容列缺失；CI migration-integration Job 强制执行。
 - `usage_taxonomy_test.go` 将 `internal/metering` 的 9 个 Token 类型与 4 个来源全部写入真实 PostgreSQL，并拒绝大小写、空白、合计类型、无方向媒体类型和供应商自定义值，防止 Go 与 Schema 枚举漂移；CI migration-integration Job 强制执行。
 - `price_version_schema_test.go` 在真实 PostgreSQL 上验证 Deployment/Region/Currency/生效时间、Token/秒/图像单位兼容性、draft→published 单向发布、费率冻结、未生效/未发布/Deployment 错配拒绝，以及历史 Usage 对价格版本和金额的不可变锁定；CI migration-integration Job 强制执行。
+- `usage_event_outbox_test.go` 验证 Attempt/Request 终态与逐维度 Outbox 全有或全无、零值不计费、唯一冲突整体回滚、不可变事实、失败持久重试、租约状态和恢复发布；同文件在配置 `KAFKA_BROKERS` 时用真实 Redpanda 验证 Topic ACK、事件 ID Key 与 Payload，CI migration-integration Job 强制执行。

@@ -705,6 +705,7 @@ func cleanupNonStreamFixtures(t *testing.T, database *sql.DB) {
 		query string
 		args  []any
 	}{
+		{name: "usage event outbox", query: `TRUNCATE app.usage_event_outbox`},
 		{name: "retry decisions", query: `DELETE FROM app.route_retry_decisions WHERE request_id LIKE 'e2e-nonstream-%'`},
 		{name: "route decisions", query: `DELETE FROM app.route_decisions WHERE request_id LIKE 'e2e-nonstream-%'`},
 		{name: "attempt events", query: `DELETE FROM app.route_attempt_status_events WHERE attempt_id IN

@@ -24,6 +24,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/gateway"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/keyauth"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/meteringoutbox"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/mockadapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/openaiadapter"
@@ -174,6 +175,15 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create execution recorder: %w", err)
 	}
+	usageEventSink, err := meteringoutbox.NewKafkaSink(cfg.Kafka.Brokers)
+	if err != nil {
+		return fmt.Errorf("create usage event sink: %w", err)
+	}
+	defer usageEventSink.Close()
+	usageEventRelay, err := meteringoutbox.New(database, usageEventSink, meteringoutbox.DefaultOptions())
+	if err != nil {
+		return fmt.Errorf("create usage event outbox relay: %w", err)
+	}
 	routeDecisionStore, err := routedecision.NewPostgresStore(database, time.Now)
 	if err != nil {
 		return fmt.Errorf("create route decision store: %w", err)
@@ -237,6 +247,17 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	defer func() {
 		stopHealth()
 		<-healthDone
+	}()
+	usageRelayContext, stopUsageRelay := context.WithCancel(ctx)
+	usageRelayDone := make(chan error, 1)
+	go func() {
+		usageRelayDone <- usageEventRelay.Run(usageRelayContext)
+	}()
+	defer func() {
+		stopUsageRelay()
+		if relayErr := <-usageRelayDone; relayErr != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("stop usage event outbox relay: %w", relayErr))
+		}
 	}()
 
 	logger.Info(ctx, "HTTP server started", observability.Fields{},

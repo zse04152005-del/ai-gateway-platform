@@ -87,12 +87,35 @@ jobs:
       REDIS_ADDR: localhost:6379
       REDIS_PASSWORD: ""
       REDIS_DB: "0"
+      KAFKA_BROKERS: localhost:19092
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
+      - name: Provision Redpanda usage topic
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name ai-gateway-ci-redpanda --publish 19092:19092 \
+            redpandadata/redpanda:v24.3.9 \
+            redpanda start --overprovisioned --smp=1 --memory=1G --reserve-memory=0M \
+            --node-id=0 --check=false \
+            --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092 \
+            --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+          for attempt in {1..30}; do
+            if docker exec ai-gateway-ci-redpanda rpk cluster health --exit-when-healthy >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs ai-gateway-ci-redpanda
+              exit 1
+            fi
+            sleep 2
+          done
+          docker exec ai-gateway-ci-redpanda rpk topic create ai-gateway.usage.v1 \
+            --brokers localhost:9092 --partitions 6 --replicas 1
       - name: Verify migration lifecycle
         shell: bash
         run: |
@@ -100,16 +123,16 @@ jobs:
           go run ./cmd/migrate validate --path migrations
           go run ./cmd/migrate up --path migrations
           go run ./cmd/migrate up --path migrations
-          go run ./cmd/migrate version --path migrations | grep -q "version=15 dirty=false"
-          go test -count=1 -tags=integration ./tests/integration/... -run 'Test(TenantProjectSchemaConstraints|VirtualAPIKeySchemaConstraints|VirtualKeyLifecycle|VirtualKeyAuthentication|ModelCatalogSchemaConstraints|ModelListAuthorizationIntersection|ProviderSecretEnvelopeAndReferenceIsolation|TenantIsolationBoundaries|GatewayExecutionLifecycle|NonStreamEndToEnd|RouteDecisionReplayEnforcesScopeAndSequence|LimitPolicySchemaConstraints|BudgetLedgerSchemaConstraints|PostgresBudgetAtomicReservation|PostgresBudgetSettlementAndDifferenceRelease|PostgresBudgetExpiredReservationReaper|PostgresBudgetSoftNoticeAndHardErrorIsolation|UsageLedgerSchemaConstraints|UsageTaxonomySchemaParity|PriceVersionSchemaAndHistoricalLock|RedisRPMAtomicConcurrencyAndTTL|RedisTPMAtomicReservationAndSettlement|RedisConcurrencyLeaseLifecycleAndProcessExpiry)'
+          go run ./cmd/migrate version --path migrations | grep -q "version=16 dirty=false"
+          go test -count=1 -tags=integration ./tests/integration/... -run 'Test(TenantProjectSchemaConstraints|VirtualAPIKeySchemaConstraints|VirtualKeyLifecycle|VirtualKeyAuthentication|ModelCatalogSchemaConstraints|ModelListAuthorizationIntersection|ProviderSecretEnvelopeAndReferenceIsolation|TenantIsolationBoundaries|GatewayExecutionLifecycle|NonStreamEndToEnd|RouteDecisionReplayEnforcesScopeAndSequence|LimitPolicySchemaConstraints|BudgetLedgerSchemaConstraints|PostgresBudgetAtomicReservation|PostgresBudgetSettlementAndDifferenceRelease|PostgresBudgetExpiredReservationReaper|PostgresBudgetSoftNoticeAndHardErrorIsolation|UsageLedgerSchemaConstraints|UsageTaxonomySchemaParity|PriceVersionSchemaAndHistoricalLock|UsageEventOutboxAtomicHandoffAndBoundedRelay|KafkaUsageEventSinkAcknowledgement|RedisRPMAtomicConcurrencyAndTTL|RedisTPMAtomicReservationAndSettlement|RedisConcurrencyLeaseLifecycleAndProcessExpiry)'
           if APP_ENV=production go run ./cmd/migrate down --path migrations --steps 1 --confirm-development; then
             echo "production down guard unexpectedly allowed rollback"
             exit 1
           fi
           go run ./cmd/migrate down --path migrations --steps 1 --confirm-development
-          go run ./cmd/migrate version --path migrations | grep -q "version=14 dirty=false"
-          go run ./cmd/migrate up --path migrations
           go run ./cmd/migrate version --path migrations | grep -q "version=15 dirty=false"
+          go run ./cmd/migrate up --path migrations
+          go run ./cmd/migrate version --path migrations | grep -q "version=16 dirty=false"
 
   config-and-secrets:
     runs-on: ubuntu-latest

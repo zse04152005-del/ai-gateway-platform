@@ -349,6 +349,7 @@ func cleanupBudgetLedgerFixtures(t *testing.T, database *sql.DB) {
 		query string
 		args  []any
 	}{
+		{"usage event outbox", `TRUNCATE app.usage_event_outbox`, nil},
 		{"budget tables", `TRUNCATE app.budget_ledger_entries, app.budget_reservations, app.budget_accounts RESTART IDENTITY`, nil},
 		{"route decisions", `DELETE FROM app.route_decisions WHERE request_id LIKE 'integration-budget-%'`, nil},
 		{"request events", `DELETE FROM app.gateway_request_status_events WHERE request_id LIKE 'integration-budget-%'`, nil},

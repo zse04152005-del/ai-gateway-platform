@@ -59,6 +59,20 @@ services:
     restart: unless-stopped
     networks: [backend]
 
+  redpanda-init:
+    image: redpandadata/redpanda:v24.3.9
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        rpk topic create ai-gateway.usage.v1 --brokers redpanda:9092
+        --partitions 6 --replicas 1
+        || rpk topic describe ai-gateway.usage.v1 --brokers redpanda:9092
+    restart: "no"
+    networks: [backend]
+
   clickhouse:
     image: clickhouse/clickhouse-server:25.3-alpine
     environment:

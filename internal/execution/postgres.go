@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
 )
 
 const requestColumns = `
@@ -249,6 +250,10 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 		return GatewayRequest{}, RouteAttempt{}, err
 	}
 	now := recorder.now().UTC()
+	usageEvents, err := recorder.newUsageEvents(request, attempt, outcome.Usage, now)
+	if err != nil {
+		return GatewayRequest{}, RouteAttempt{}, err
+	}
 	transaction, err := recorder.database.BeginTx(ctx, nil)
 	if err != nil {
 		return GatewayRequest{}, RouteAttempt{}, newRecordError(ErrUnavailable, err)
@@ -259,6 +264,9 @@ func (recorder *PostgresRecorder) CompleteAttempt(
 		ctx, transaction, request, attempt, outcome, usageSummary, now,
 	)
 	if err != nil {
+		return GatewayRequest{}, RouteAttempt{}, err
+	}
+	if err := insertUsageEventsInTransaction(ctx, transaction, usageEvents); err != nil {
 		return GatewayRequest{}, RouteAttempt{}, err
 	}
 	completedRequest, err := scanRequest(transaction.QueryRowContext(ctx, `
@@ -296,6 +304,10 @@ func (recorder *PostgresRecorder) CompleteAttemptForRetry(
 		return RouteAttempt{}, err
 	}
 	now := recorder.now().UTC()
+	usageEvents, err := recorder.newUsageEvents(request, attempt, outcome.Usage, now)
+	if err != nil {
+		return RouteAttempt{}, err
+	}
 	transaction, err := recorder.database.BeginTx(ctx, nil)
 	if err != nil {
 		return RouteAttempt{}, newRecordError(ErrUnavailable, err)
@@ -308,10 +320,85 @@ func (recorder *PostgresRecorder) CompleteAttemptForRetry(
 	if err != nil {
 		return RouteAttempt{}, err
 	}
+	if err := insertUsageEventsInTransaction(ctx, transaction, usageEvents); err != nil {
+		return RouteAttempt{}, err
+	}
 	if err := transaction.Commit(); err != nil {
 		return RouteAttempt{}, newRecordError(ErrUnavailable, err)
 	}
 	return completedAttempt, nil
+}
+
+func (recorder *PostgresRecorder) newUsageEvents(
+	request GatewayRequest,
+	attempt RouteAttempt,
+	usage *adapter.NormalizedUsage,
+	observedAt time.Time,
+) ([]metering.UsageEvent, error) {
+	events, err := metering.NewUsageEvents(metering.UsageIdentity{
+		TenantID: request.TenantID, RequestID: request.ID,
+		AttemptID: attempt.ID, DeploymentID: attempt.DeploymentID,
+		TraceID: request.TraceID, SpanID: request.SpanID, ObservedAt: observedAt,
+	}, usage, func() (string, error) {
+		return newUUID(recorder.random)
+	})
+	if err == nil {
+		return events, nil
+	}
+	if errors.Is(err, metering.ErrInvalidUsageEvent) {
+		return nil, ErrInvalid
+	}
+	return nil, newRecordError(ErrUnavailable, err)
+}
+
+func insertUsageEventsInTransaction(
+	ctx context.Context,
+	transaction *sql.Tx,
+	events []metering.UsageEvent,
+) error {
+	if len(events) == 0 {
+		return nil
+	}
+	eventIDs := make([]string, len(events))
+	tokenTypes := make([]string, len(events))
+	quantities := make([]int64, len(events))
+	for index, event := range events {
+		if event.Validate() != nil {
+			return ErrInvalid
+		}
+		eventIDs[index] = event.EventID
+		tokenTypes[index] = string(event.TokenType)
+		quantities[index] = event.Quantity
+	}
+	first := events[0]
+	result, err := transaction.ExecContext(ctx, `
+		INSERT INTO app.usage_event_outbox (
+			event_id, schema_version, kind, tenant_id, request_id, attempt_id,
+			deployment_id, token_type, quantity, source, usage_complete,
+			observed_at, trace_id, span_id, available_at,
+			created_at, created_by, updated_at
+		)
+		SELECT facts.event_id, $2, $3, $4, $5, $6,
+			$7, facts.token_type, facts.quantity, $10, $11,
+			$12, $13, $14, $12, $12, 'gateway:usage-publisher', $12
+		FROM unnest($1::uuid[], $8::text[], $9::bigint[])
+			AS facts(event_id, token_type, quantity)`,
+		pq.Array(eventIDs), first.SchemaVersion, first.Kind, first.TenantID,
+		first.RequestID, first.AttemptID, first.DeploymentID,
+		pq.Array(tokenTypes), pq.Array(quantities), first.Source,
+		first.UsageComplete, first.ObservedAt, first.TraceID, first.SpanID,
+	)
+	if err != nil {
+		return mapDatabaseError(err)
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil || inserted != int64(len(events)) {
+		if err == nil {
+			err = fmt.Errorf("inserted %d usage events, want %d", inserted, len(events))
+		}
+		return newRecordError(ErrUnavailable, err)
+	}
+	return nil
 }
 
 func completeAttemptInTransaction(

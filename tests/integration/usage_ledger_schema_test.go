@@ -193,7 +193,8 @@ func cleanupUsageLedgerFixtures(t *testing.T, database *sql.DB) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	statements := []string{
-		`TRUNCATE app.usage_ledger_entries, app.price_version_rates, app.price_versions RESTART IDENTITY`,
+		`TRUNCATE app.usage_event_outbox, app.usage_ledger_entries,
+			app.price_version_rates, app.price_versions RESTART IDENTITY`,
 		`DELETE FROM app.route_retry_decisions WHERE request_id LIKE 'integration-usage-%'`,
 		`DELETE FROM app.route_decisions WHERE request_id LIKE 'integration-usage-%'`,
 		`DELETE FROM app.route_attempt_status_events WHERE attempt_id IN (
