@@ -21,6 +21,7 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `budget`：Account、Reservation 和 Settlement。
 - `metering`：Usage Event、Ledger 和价格。
 - `meteringoutbox`：Attempt 终态事务 Outbox 的有限批次 Kafka Relay、租约恢复和安全重试状态机。
+- `meteringconsumer`：UsageEvent 严格解码、语义 Fingerprint、可信价格选择、精确金额和 Receipt/Ledger 幂等事务。
 - `config`：版本化 Snapshot。
 - `security`：脱敏、密钥端口和 SSRF 防护。
 - `apierror`：内部 cause 与公开 HTTP 错误定义的安全隔离、统一渲染和重试元数据。
@@ -44,4 +45,5 @@ domain 不依赖 transport、数据库、Redis、Kafka 或供应商 SDK
 - `proxy`：一个已选 Deployment 对应一次 Adapter/HTTP/Parse Attempt；只返回 Normalized Response 或安全分类，不内置重试。
 - `execution`：可信 GatewayRequest、独立 RouteAttempt、乐观版本状态迁移、追加式状态证据和无内容 Usage Summary 的 PostgreSQL 记录边界。
 - `meteringoutbox`：从 PostgreSQL 不可变 UsageEvent Outbox 向预创建 Kafka Topic 的至少一次后台发布；不阻塞请求热路径，稳定事件 ID 留给消费者幂等。
+- `meteringconsumer`：固定 Kafka Consumer Group 的手动 offset 提交与不可变 Receipt；只有 Ledger 事务成功后才确认事件。
 - `meteringworker`：计量进程的事件总线 bootstrap 会话与强制有限时停止生命周期；不提前承载消费/账本规则。

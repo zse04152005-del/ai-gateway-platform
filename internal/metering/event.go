@@ -56,6 +56,7 @@ type UsageEvent struct {
 	AttemptID     string         `json:"attempt_id"`
 	DeploymentID  string         `json:"deployment_id"`
 	TokenType     TokenType      `json:"token_type"`
+	BillingUnit   BillingUnit    `json:"billing_unit"`
 	Quantity      int64          `json:"quantity"`
 	Source        Source         `json:"source"`
 	UsageComplete bool           `json:"usage_complete"`
@@ -112,8 +113,9 @@ func NewUsageEvents(
 			EventID: eventID, SchemaVersion: UsageEventSchemaVersion, Kind: kind,
 			TenantID: identity.TenantID, RequestID: identity.RequestID,
 			AttemptID: identity.AttemptID, DeploymentID: identity.DeploymentID,
-			TokenType: dimension.tokenType, Quantity: dimension.count.Value,
-			Source: usage.Source, UsageComplete: usage.Complete,
+			TokenType: dimension.tokenType, BillingUnit: BillingUnitToken,
+			Quantity: dimension.count.Value,
+			Source:   usage.Source, UsageComplete: usage.Complete,
 			ObservedAt: identity.ObservedAt.UTC(), TraceID: identity.TraceID, SpanID: identity.SpanID,
 		}
 		if event.Validate() != nil {
@@ -134,6 +136,7 @@ func (event UsageEvent) Validate() error {
 	kind, validSource := gatewayUsageKind(event.Source)
 	if event.SchemaVersion != UsageEventSchemaVersion || !priceUUIDPattern.MatchString(event.EventID) ||
 		validateUsageIdentity(identity) != nil || !event.TokenType.Valid() ||
+		event.BillingUnit != BillingUnitToken ||
 		event.Quantity < 1 || event.Quantity > MaximumExactInteger || !validSource || event.Kind != kind {
 		return ErrInvalidUsageEvent
 	}

@@ -219,7 +219,7 @@ func (relay *Relay) claim(
 		WHERE event.event_id = candidates.event_id
 		RETURNING event.event_id, event.schema_version, event.kind,
 			event.tenant_id, event.request_id, event.attempt_id, event.deployment_id,
-			event.token_type, event.quantity, event.source, event.usage_complete,
+			event.token_type, event.billing_unit, event.quantity, event.source, event.usage_complete,
 			event.observed_at, event.trace_id, event.span_id, event.publish_attempts`,
 		now, relay.batchSize, leaseID, now.Add(relay.leaseDuration))
 	if err != nil {
@@ -231,7 +231,7 @@ func (relay *Relay) claim(
 		if err := rows.Scan(
 			&event.EventID, &event.SchemaVersion, &event.Kind,
 			&event.TenantID, &event.RequestID, &event.AttemptID, &event.DeploymentID,
-			&event.TokenType, &event.Quantity, &event.Source, &event.UsageComplete,
+			&event.TokenType, &event.BillingUnit, &event.Quantity, &event.Source, &event.UsageComplete,
 			&event.ObservedAt, &event.TraceID, &event.SpanID, &event.PublishAttempts,
 		); err != nil {
 			_ = rows.Close()

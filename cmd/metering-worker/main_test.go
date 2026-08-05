@@ -19,6 +19,11 @@ func (function connectorFunc) Connect(ctx context.Context, brokers []string) (me
 
 type sessionFunc func(context.Context) error
 
+func (function sessionFunc) Run(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
 func (function sessionFunc) Close(ctx context.Context) error {
 	return function(ctx)
 }
@@ -98,6 +103,14 @@ func TestRunRejectsNilLifecycleInputs(t *testing.T) {
 	}
 	if err := run(context.Background(), validLookup(), nil); err == nil || !strings.Contains(err.Error(), "connector") {
 		t.Fatalf("run(nil connector) error = %v", err)
+	}
+}
+
+func TestRunProductionStopsCleanlyBeforeDependencyIO(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := runProductionWithLogs(ctx, validLookup(), &bytes.Buffer{}); err != nil {
+		t.Fatalf("runProductionWithLogs(canceled) error = %v", err)
 	}
 }
 

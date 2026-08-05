@@ -11,8 +11,10 @@ import (
 	"time"
 )
 
-// Session is an established event-bus connection that can be closed gracefully.
+// Session is an established event-bus consumer session that runs until
+// cancellation and can be closed gracefully.
 type Session interface {
+	Run(context.Context) error
 	Close(context.Context) error
 }
 
@@ -97,11 +99,24 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 
 	w.connected.Store(true)
-	<-ctx.Done()
+	runErr := session.Run(ctx)
 	w.connected.Store(false)
 
-	if err := closeSession(session, w.shutdownTimeout); err != nil {
-		return fmt.Errorf("close metering worker event-bus session: %w", err)
+	closeErr := closeSession(session, w.shutdownTimeout)
+	if ctx.Err() != nil && (runErr == nil || errors.Is(runErr, context.Canceled)) {
+		runErr = nil
+	}
+	if runErr != nil && closeErr != nil {
+		return errors.Join(
+			fmt.Errorf("run metering worker event-bus session: %w", runErr),
+			fmt.Errorf("close metering worker event-bus session: %w", closeErr),
+		)
+	}
+	if runErr != nil {
+		return fmt.Errorf("run metering worker event-bus session: %w", runErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close metering worker event-bus session: %w", closeErr)
 	}
 	return nil
 }
@@ -170,6 +185,14 @@ func (c *TCPConnector) Connect(ctx context.Context, brokers []string) (Session, 
 
 type tcpSession struct {
 	connection net.Conn
+}
+
+func (s tcpSession) Run(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("event-bus session context must not be nil")
+	}
+	<-ctx.Done()
+	return nil
 }
 
 func (s tcpSession) Close(_ context.Context) error {

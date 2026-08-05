@@ -20,9 +20,21 @@ func (function connectorFunc) Connect(ctx context.Context, brokers []string) (Se
 
 type sessionFunc func(context.Context) error
 
+func (function sessionFunc) Run(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
 func (function sessionFunc) Close(ctx context.Context) error {
 	return function(ctx)
 }
+
+type failingRunSession struct {
+	runError error
+}
+
+func (session failingRunSession) Run(context.Context) error { return session.runError }
+func (failingRunSession) Close(context.Context) error       { return nil }
 
 func TestNewValidatesOptions(t *testing.T) {
 	valid := Options{
@@ -107,6 +119,14 @@ func TestWorkerReturnsConnectionAndCloseFailures(t *testing.T) {
 	cancel()
 	if err := worker.Run(ctx); !errors.Is(err, closeErr) {
 		t.Fatalf("Run() error = %v, want close failure", err)
+	}
+
+	runErr := errors.New("synthetic consume failure")
+	worker = newTestWorker(t, connectorFunc(func(context.Context, []string) (Session, error) {
+		return failingRunSession{runError: runErr}, nil
+	}))
+	if err := worker.Run(context.Background()); !errors.Is(err, runErr) {
+		t.Fatalf("Run() error = %v, want consume failure", err)
 	}
 }
 

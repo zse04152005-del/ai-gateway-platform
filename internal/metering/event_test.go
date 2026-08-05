@@ -40,6 +40,7 @@ func TestNewUsageEventsPreservesIndependentPositiveFacts(t *testing.T) {
 	for eventIndex, event := range events {
 		if event.EventID != ids[eventIndex] || event.Kind != metering.UsageEventEstimated ||
 			event.TokenType != wantTypes[eventIndex] || event.Quantity != wantQuantities[eventIndex] ||
+			event.BillingUnit != metering.BillingUnitToken ||
 			event.Source != metering.SourceEstimated || !event.UsageComplete ||
 			event.ObservedAt.Location() != time.UTC || event.Validate() != nil {
 			t.Fatalf("events[%d] = %+v", eventIndex, event)
@@ -117,6 +118,7 @@ func TestUsageEventValidationRequiresCompatibleKindAndCompleteContract(t *testin
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.SchemaVersion = 2 }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.Kind = metering.UsageEventObserved }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.TokenType = "total" }),
+		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.BillingUnit = metering.BillingUnitSecond }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.Quantity = 0 }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.Source = metering.SourceReconciled }),
 	}

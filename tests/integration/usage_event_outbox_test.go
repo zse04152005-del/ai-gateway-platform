@@ -167,9 +167,9 @@ func TestUsageEventOutboxAtomicHandoffAndBoundedRelay(t *testing.T) {
 	_, err = database.ExecContext(ctx, `
 		INSERT INTO app.usage_event_outbox (
 			event_id, schema_version, kind, tenant_id, request_id, attempt_id,
-			deployment_id, token_type, quantity, source, usage_complete,
+			deployment_id, token_type, billing_unit, quantity, source, usage_complete,
 			observed_at, trace_id, span_id, available_at, created_at, created_by, updated_at
-		) VALUES ($1, 1, 'usage.estimated', $2, $3, $4, $5, 'input', 1,
+		) VALUES ($1, 1, 'usage.estimated', $2, $3, $4, $5, 'input', 'token', 1,
 			'estimated', false, $6, $7, $8, $6, $6, 'integration:usage-outbox', $6)`,
 		usageOutboxConflictEventID, atomicRequest.TenantID, atomicRequest.ID,
 		atomicAttempt.ID, atomicAttempt.DeploymentID, now,
@@ -202,6 +202,10 @@ func TestUsageEventOutboxAtomicHandoffAndBoundedRelay(t *testing.T) {
 		UPDATE app.usage_event_outbox SET quantity = 2, updated_at = $2 WHERE event_id = $1`,
 		usageOutboxConflictEventID, now.Add(time.Second))
 	expectConstraint(t, err, "usage_event_outbox_facts_immutable")
+	_, err = database.ExecContext(ctx, `
+		UPDATE app.usage_event_outbox SET billing_unit = 'second', updated_at = $2 WHERE event_id = $1`,
+		usageOutboxConflictEventID, now.Add(time.Second))
+	expectConstraint(t, err, "usage_event_outbox_billing_unit_immutable")
 	_, err = database.ExecContext(ctx, `DELETE FROM app.usage_event_outbox WHERE event_id = $1`, usageOutboxConflictEventID)
 	expectConstraint(t, err, "usage_event_outbox_delete_published_only")
 
@@ -252,6 +256,7 @@ func TestKafkaUsageEventSinkAcknowledgement(t *testing.T) {
 		AttemptID:     "7d000000-0000-4000-8000-000000000202",
 		DeploymentID:  modelListDeploymentAID,
 		TokenType:     metering.TokenTypeInput,
+		BillingUnit:   metering.BillingUnitToken,
 		Quantity:      1,
 		Source:        metering.SourceEstimated,
 		ObservedAt:    time.Now().UTC(),

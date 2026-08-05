@@ -2,6 +2,7 @@ package metering
 
 import (
 	"errors"
+	"math/big"
 	"regexp"
 	"strings"
 	"time"
@@ -17,6 +18,8 @@ var (
 	ErrPriceNotEffective = errors.New("metering price version is not effective")
 	// ErrPriceRateNotFound means the version has no rate for the requested token type.
 	ErrPriceRateNotFound = errors.New("metering price rate is not found")
+	// ErrAmountOverflow means the exact rounded charge cannot fit the ledger integer contract.
+	ErrAmountOverflow = errors.New("metering calculated amount exceeds the exact integer limit")
 
 	priceUUIDPattern     = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 	priceRegionPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -48,6 +51,27 @@ type PriceRate struct {
 	BillingUnit     BillingUnit
 	UnitQuantity    int64
 	UnitPriceMicros int64
+}
+
+// CalculateAmountMicros prices one positive usage fact with integer ceiling
+// rounding. A positive non-zero rate therefore never silently becomes free.
+func CalculateAmountMicros(quantity int64, rate PriceRate) (int64, error) {
+	if quantity < 1 || quantity > MaximumExactInteger || rate.Validate() != nil {
+		return 0, ErrInvalidPriceVersion
+	}
+	if rate.UnitPriceMicros == 0 {
+		return 0, nil
+	}
+	numerator := new(big.Int).Mul(big.NewInt(quantity), big.NewInt(rate.UnitPriceMicros))
+	amount, remainder := new(big.Int), new(big.Int)
+	amount.QuoRem(numerator, big.NewInt(rate.UnitQuantity), remainder)
+	if remainder.Sign() != 0 {
+		amount.Add(amount, big.NewInt(1))
+	}
+	if !amount.IsInt64() || amount.Int64() > MaximumExactInteger {
+		return 0, ErrAmountOverflow
+	}
+	return amount.Int64(), nil
 }
 
 // Validate rejects rates that cannot be represented safely or whose unit is

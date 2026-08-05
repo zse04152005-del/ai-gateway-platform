@@ -47,7 +47,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mi
 - `000014_constrain_usage_taxonomy` 将 Ledger Token 类型收紧为九个独立输入/输出/缓存/推理/音频/图像维度，并将来源收紧为 provider/estimated/reconciled/adjustment；未知历史值会阻止约束验证而不会被静默归类。
 - `000015_create_price_versions` 创建 Deployment/Region/Currency/生效时间价格版本和分 Token 类型费率；发布后身份与费率不可变，Usage Ledger 以复合外键锁定已生效版本和费率，并保存整数 micros 金额。
 - `000016_create_usage_event_outbox` 创建 Attempt 终态 UsageEvent 事务 Outbox、Request/Attempt/Deployment 可信复合引用、逐维度唯一事实、不可变业务字段和 `pending/publishing/published` 租约状态机；Down 会删除全部未消费或已发布事件及状态，只能在明确获批的开发回滚中执行。
+- `000017_create_usage_event_receipts` 创建与 Usage Ledger 延迟外键绑定的不可变消费 Receipt，以 eventId 主键和规范化 Payload SHA-256 区分合法重放与同 ID 不同事实冲突；Down 会删除全部幂等 Fingerprint，不能用于生产回滚。
+- `000018_add_usage_event_billing_unit` 为 Outbox 回填并锁定 `billing_unit=token`，使 Consumer 必须选择单位完全匹配的 PriceRate，避免 audio token 被误按秒计价；未来新增 second/image 事件必须用新迁移扩展有限契约。
 - Up 重复执行时，迁移引擎返回 no-change 并以成功退出，不重复运行已登记版本。
 - Down 只用于开发与可控回滚，CLI 要求 `--confirm-development`，并在 `APP_ENV=production` 时强制拒绝。
 - 含数据丢失风险的回滚必须单独审批；生产优先采用修复性前滚，不能把 Down 当作常规发布手段。
-- CI 在临时 PostgreSQL 中执行：顺序校验 -> 空库 up -> 再次 up/no-change -> Schema 约束测试 -> down 1 -> up，验证新库、幂等和受控回滚。
+- CI 在临时 PostgreSQL 中执行：顺序校验 -> 空库 up -> 再次 up/no-change -> Schema/Consumer 约束测试 -> 最新 P10-T05 两个版本 down -> up，验证新库、幂等和受控恢复。

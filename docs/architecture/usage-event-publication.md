@@ -33,7 +33,7 @@ Kafka ACK 与 PostgreSQL `published` 标记之间不能形成跨系统原子提�
 
 ## Wire Contract 与安全边界
 
-UsageEvent `schema_version=1`，只包含事件、Tenant、Request、Attempt、Deployment、Token 类型、整数数量、来源、完整性、观察时间和 Trace/Span 身份。它不包含 Prompt、Response、Virtual Credential、Provider Secret、Endpoint、Raw Usage Evidence 或 Broker 私密错误。
+UsageEvent `schema_version=1`，只包含事件、Tenant、Request、Attempt、Deployment、Token 类型、明确计费单位、整数数量、来源、完整性、观察时间和 Trace/Span 身份。当前 Gateway 的 Normalized Usage 均为 Token Count，因此显式发布 `billing_unit=token`；消费者对字段加入前的 version-1 消息也只允许向后兼容为 token。它不包含 Prompt、Response、Virtual Credential、Provider Secret、Endpoint、Raw Usage Evidence 或 Broker 私密错误。
 
 Producer 使用 franz-go 幂等 Producer、全部 ISR ACK 和最多 1000 条客户端缓冲。Topic 必须由部署流程预创建为 `ai-gateway.usage.v1`；Compose 和 CI 当前创建 6 分区、单节点环境 1 副本，不依赖 Broker 自动建 Topic。生产环境应按可用性目标提高副本数和 `min.insync.replicas`。
 

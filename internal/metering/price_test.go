@@ -110,6 +110,33 @@ func TestPriceRateUnitAndExactIntegerBoundaries(t *testing.T) {
 	}
 }
 
+func TestCalculateAmountMicrosRoundsUpAndRejectsOverflow(t *testing.T) {
+	rate := metering.PriceRate{
+		TokenType: metering.TokenTypeInput, BillingUnit: metering.BillingUnitToken,
+		UnitQuantity: 1_000_000, UnitPriceMicros: 2_500_000,
+	}
+	for quantity, want := range map[int64]int64{1: 3, 2: 5, 13: 33, 1_000_000: 2_500_000} {
+		got, err := metering.CalculateAmountMicros(quantity, rate)
+		if err != nil || got != want {
+			t.Errorf("CalculateAmountMicros(%d) = %d, %v; want %d", quantity, got, err, want)
+		}
+	}
+	free := rate
+	free.UnitPriceMicros = 0
+	if got, err := metering.CalculateAmountMicros(1, free); err != nil || got != 0 {
+		t.Fatalf("CalculateAmountMicros(free) = %d, %v", got, err)
+	}
+	if _, err := metering.CalculateAmountMicros(0, rate); !errors.Is(err, metering.ErrInvalidPriceVersion) {
+		t.Fatalf("CalculateAmountMicros(zero) error = %v", err)
+	}
+	overflow := rate
+	overflow.UnitQuantity = 1
+	overflow.UnitPriceMicros = metering.MaximumExactInteger
+	if _, err := metering.CalculateAmountMicros(metering.MaximumExactInteger, overflow); !errors.Is(err, metering.ErrAmountOverflow) {
+		t.Fatalf("CalculateAmountMicros(overflow) error = %v", err)
+	}
+}
+
 func validPriceVersion(createdAt, effectiveAt time.Time) metering.PriceVersion {
 	return metering.PriceVersion{
 		ID: testPriceVersionID, DeploymentID: testDeploymentID, Region: "cn-north-1", Currency: "USD",

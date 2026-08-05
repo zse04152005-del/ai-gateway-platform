@@ -34,5 +34,6 @@
 - [`usage-taxonomy.md`](usage-taxonomy.md)：输入/输出/缓存/推理/音频/图像有限维度、四种计量来源与 Go/PostgreSQL 单一契约。
 - [`price-version-model.md`](price-version-model.md)：Deployment/Region/Currency/生效时间价格发布、单位兼容矩阵与历史 Usage 价格锁定。
 - [`usage-event-publication.md`](usage-event-publication.md)：Attempt 终态事务化 Outbox、有限批次 Kafka Relay、租约恢复与至少一次发布边界。
+- [`metering-idempotent-consumption.md`](metering-idempotent-consumption.md)：手动 offset 提交、Receipt 语义指纹、可信价格选择和单事件幂等账本事务。
 - [`gateway-execution-records.md`](gateway-execution-records.md)：GatewayRequest/RouteAttempt 事实边界、状态机、CAS、追加式证据与 fail-closed 调用顺序。
 - [`stream-cancellation.md`](stream-cancellation.md)：客户端取消到 Adapter/Body/Provider Context 的传播、释放证据和泄漏回归边界。

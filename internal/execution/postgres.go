@@ -361,6 +361,7 @@ func insertUsageEventsInTransaction(
 	}
 	eventIDs := make([]string, len(events))
 	tokenTypes := make([]string, len(events))
+	billingUnits := make([]string, len(events))
 	quantities := make([]int64, len(events))
 	for index, event := range events {
 		if event.Validate() != nil {
@@ -368,24 +369,25 @@ func insertUsageEventsInTransaction(
 		}
 		eventIDs[index] = event.EventID
 		tokenTypes[index] = string(event.TokenType)
+		billingUnits[index] = string(event.BillingUnit)
 		quantities[index] = event.Quantity
 	}
 	first := events[0]
 	result, err := transaction.ExecContext(ctx, `
 		INSERT INTO app.usage_event_outbox (
 			event_id, schema_version, kind, tenant_id, request_id, attempt_id,
-			deployment_id, token_type, quantity, source, usage_complete,
+			deployment_id, token_type, billing_unit, quantity, source, usage_complete,
 			observed_at, trace_id, span_id, available_at,
 			created_at, created_by, updated_at
 		)
 		SELECT facts.event_id, $2, $3, $4, $5, $6,
-			$7, facts.token_type, facts.quantity, $10, $11,
-			$12, $13, $14, $12, $12, 'gateway:usage-publisher', $12
-		FROM unnest($1::uuid[], $8::text[], $9::bigint[])
-			AS facts(event_id, token_type, quantity)`,
+			$7, facts.token_type, facts.billing_unit, facts.quantity, $11, $12,
+			$13, $14, $15, $13, $13, 'gateway:usage-publisher', $13
+		FROM unnest($1::uuid[], $8::text[], $9::text[], $10::bigint[])
+			AS facts(event_id, token_type, billing_unit, quantity)`,
 		pq.Array(eventIDs), first.SchemaVersion, first.Kind, first.TenantID,
 		first.RequestID, first.AttemptID, first.DeploymentID,
-		pq.Array(tokenTypes), pq.Array(quantities), first.Source,
+		pq.Array(tokenTypes), pq.Array(billingUnits), pq.Array(quantities), first.Source,
 		first.UsageComplete, first.ObservedAt, first.TraceID, first.SpanID,
 	)
 	if err != nil {

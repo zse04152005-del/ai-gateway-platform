@@ -14,7 +14,7 @@ Migration 7 已把一次客户端调用建模为 `gateway_requests`，把每次�
 
 ## 2. 幂等与不可变性
 
-- `event_id` 使用 UUID，并由全局唯一约束保证同一事件最多形成一条有效分录；后续 Metering Consumer 可以用唯一冲突实现至少一次投递下的幂等。
+- `event_id` 使用 UUID，并由全局唯一约束保证同一事件最多形成一条有效分录；Migration 17 的不可变 Receipt 进一步保存规范化 Payload SHA-256，在至少一次投递下区分合法重放与“同 ID 不同事实”冲突。
 - 表只允许 `INSERT`。数据库触发器对 `UPDATE` 和 `DELETE` 返回 SQLSTATE `23514`；修正必须在 P10-T08 通过新的 Adjustment 分录表达。
 - `quantity` 使用精确 `bigint`，范围为 `1..2^53-1`，避免 JSON/JavaScript 控制面交换时失真，也拒绝没有事实价值的零数量分录。
 - Migration 13 先让 `token_type` 与 `source` 接受最长 64 字符的小写安全标识符；Migration 14 再由 P10-T02 收紧为 `internal/metering` 定义的有限领域枚举，未知历史值会阻止迁移。
@@ -23,8 +23,8 @@ Migration 7 已把一次客户端调用建模为 `gateway_requests`，把每次�
 
 Tenant/Request/时间索引用于请求账单时间线，Request/Attempt/时间部分索引用于物理调用明细。`created_at` 表示账本落库时间，`observed_at` 保留事实观察时间；异步消费延迟不会覆盖原始时间。
 
-Migration 15 追加 `price_version_id` 与 `amount_micros`：每条 Usage 必须通过 `(price_version_id, token_type)` 复合外键锁定一条已发布且在 `observed_at` 生效的费率，币种、区域和单位由不可变 PriceVersion 导出。多 Attempt 金额聚合仍属于 P10-T06，修正引用属于 P10-T08。后续字段只能通过追加迁移扩展，不能修改已应用的 Migration 13。
+Migration 15 追加 `price_version_id` 与 `amount_micros`：每条 Usage 必须通过 `(price_version_id, token_type)` 复合外键锁定一条已发布且在 `observed_at` 生效的费率，币种、区域和单位由不可变 PriceVersion 导出。P10-T05 Consumer 同时要求事件 `billing_unit` 与费率单位完全匹配，并以整数向上取整保存金额。多 Attempt 金额聚合仍属于 P10-T06，修正引用属于 P10-T08。后续字段只能通过追加迁移扩展，不能修改已应用的 Migration 13。
 
 ## 4. 验证
 
-真实 PostgreSQL 集成测试覆盖 Request 级与 Attempt 级分录、`event_id` 跨 Request 全局重复、Tenant/Request 和 Request/Attempt 错配、数量边界、有限分类、价格锁定、数据库级 UPDATE/DELETE 拒绝，以及敏感内容列缺失。每个最新迁移都由 CI 在临时数据库执行受控 down 1 与 up 恢复。
+真实 PostgreSQL 集成测试覆盖 Request 级与 Attempt 级分录、`event_id` 跨 Request 全局重复、Tenant/Request 和 Request/Attempt 错配、数量边界、有限分类、价格锁定、十次事件重放、Fingerprint 冲突、数据库级 UPDATE/DELETE 拒绝，以及敏感内容列缺失。CI 在临时数据库执行最新迁移的受控 Down/Up 恢复。
