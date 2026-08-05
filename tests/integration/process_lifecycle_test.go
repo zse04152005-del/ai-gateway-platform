@@ -145,9 +145,15 @@ func testMeteringWorkerProcess(t *testing.T, root, binary string) {
 	if err := connection.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatalf("SetReadDeadline() error = %v", err)
 	}
-	buffer := make([]byte, 1)
-	if _, err := connection.Read(buffer); err == nil {
-		t.Fatal("event-bus connection remained open after worker shutdown")
+	buffer := make([]byte, 1024)
+	for {
+		if _, err := connection.Read(buffer); err != nil {
+			var netError net.Error
+			if errors.As(err, &netError) && netError.Timeout() {
+				t.Fatal("event-bus connection remained open after worker shutdown")
+			}
+			break
+		}
 	}
 	assertJSONLogs(t, process.stderr.String(), "metering-worker", listener.Addr().String(), "postgres://")
 }
