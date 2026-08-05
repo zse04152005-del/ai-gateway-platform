@@ -65,7 +65,7 @@ Attempt 2: created → connecting → headers_received → succeeded
 
 成功、失败、取消和部分失败 Attempt 都允许保存各自已知的 presence-preserving Usage Summary。若 Provider 调用成功但 Gateway 在客户端投影前发现协议问题，已知 Provider Usage 和 Provider Request ID 会附在该失败 Attempt 上，再考虑备用目标；不会因为响应未发送给客户端就假设该 Attempt 免费。
 
-公共 OpenAI `usage` 仍只描述最终成功模型响应，不把不同模型/Provider 的 Token 机械相加；真实 `gateway.attempt_count` 提示发生过多次物理调用。P10-T06 将按全部 RouteAttempt 的独立 Usage/价格版本聚合费用。P08-T07 的保证是任何物理调用都有独立可计费事实，后续聚合不能因为透明切换而遗漏 Attempt。
+公共 OpenAI `usage` 仍只描述最终成功模型响应，不把不同模型/Provider 的 Token 机械相加；真实 `gateway.attempt_count` 提示发生过多次物理调用。P10-T06 已按全部 RouteAttempt 的独立 Usage/价格版本和币种聚合费用，并在异步 Ledger 未完成时返回 pending。P08-T07 的保证是任何物理调用都有独立可计费事实，聚合不能因为透明切换而遗漏 Attempt。
 
 ## 7. 失败和取消
 

@@ -1,6 +1,6 @@
 # metering-worker
 
-异步计量进程。当前使用 Kafka Consumer Group 消费至少一次投递的 UsageEvent，以 PostgreSQL Receipt 幂等写入带价格版本的 Usage Ledger；后续继续负责多 Attempt 聚合、预算结算与分析存储。
+异步计量进程。当前使用 Kafka Consumer Group 消费至少一次投递的 UsageEvent，以 PostgreSQL Receipt 幂等写入带价格版本的 Usage Ledger；请求级多 Attempt 费用由独立 `internal/meteringcost` 读取侧从 Ledger 重建，worker 后续继续负责预算结算与分析存储。
 
 ## 启动
 
@@ -16,8 +16,9 @@ worker 使用固定消费者组 `ai-gateway-metering-v1` 订阅预创建的 `ai-
 ## 当前边界
 
 - 已实现：Kafka metadata/consumer group、有限 Poll、再均衡阻塞、严格 UsageEvent 解码、Receipt/Ledger 事务幂等、有效价格选择、整数 micros 计算、手动 offset 提交和有限时关闭。
+- 已实现读取侧：多 Attempt/部分流/失败费用按 Request 与币种聚合，Outbox 未全部落账时拒绝返回部分总额。
 - 失败策略：数据库/价格/Payload/offset 任一步失败均不确认当前事件，进程返回安全分类错误，由编排器重启后重放。
-- 尚未实现：DLQ/积压告警和人工恢复 Runbook（P13）、多 Attempt 聚合（P10-T06）、Adjustment（P10-T08）与 ClickHouse 分析写入（P11）。
+- 尚未实现：DLQ/积压告警和人工恢复 Runbook（P13）、Adjustment（P10-T08）与 ClickHouse 分析写入（P11）。
 
 真实 PostgreSQL/Redpanda 幂等测试：
 

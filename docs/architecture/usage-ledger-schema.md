@@ -23,7 +23,7 @@ Migration 7 已把一次客户端调用建模为 `gateway_requests`，把每次�
 
 Tenant/Request/时间索引用于请求账单时间线，Request/Attempt/时间部分索引用于物理调用明细。`created_at` 表示账本落库时间，`observed_at` 保留事实观察时间；异步消费延迟不会覆盖原始时间。
 
-Migration 15 追加 `price_version_id` 与 `amount_micros`：每条 Usage 必须通过 `(price_version_id, token_type)` 复合外键锁定一条已发布且在 `observed_at` 生效的费率，币种、区域和单位由不可变 PriceVersion 导出。P10-T05 Consumer 同时要求事件 `billing_unit` 与费率单位完全匹配，并以整数向上取整保存金额。多 Attempt 金额聚合仍属于 P10-T06，修正引用属于 P10-T08。后续字段只能通过追加迁移扩展，不能修改已应用的 Migration 13。
+Migration 15 追加 `price_version_id` 与 `amount_micros`：每条 Usage 必须通过 `(price_version_id, token_type)` 复合外键锁定一条已发布且在 `observed_at` 生效的费率，币种、区域和单位由不可变 PriceVersion 导出。P10-T05 Consumer 同时要求事件 `billing_unit` 与费率单位完全匹配，并以整数向上取整保存金额。P10-T06 已按 [`multi-attempt-cost-aggregation.md`](multi-attempt-cost-aggregation.md) 从不可变分录即时重建全部 Attempt 金额；修正引用属于 P10-T08。后续字段只能通过追加迁移扩展，不能修改已应用的 Migration 13。
 
 ## 4. 验证
 

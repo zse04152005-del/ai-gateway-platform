@@ -40,3 +40,4 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Action test-integratio
 - `price_version_schema_test.go` 在真实 PostgreSQL 上验证 Deployment/Region/Currency/生效时间、Token/秒/图像单位兼容性、draft→published 单向发布、费率冻结、未生效/未发布/Deployment 错配拒绝，以及历史 Usage 对价格版本和金额的不可变锁定；CI migration-integration Job 强制执行。
 - `usage_event_outbox_test.go` 验证 Attempt/Request 终态与逐维度 Outbox 全有或全无、零值不计费、唯一冲突整体回滚、不可变事实、失败持久重试、租约状态和恢复发布；同文件在配置 `KAFKA_BROKERS` 时用真实 Redpanda 验证 Topic ACK、事件 ID Key 与 Payload，CI migration-integration Job 强制执行。
 - `metering_idempotency_test.go` 用真实 PostgreSQL/Redpanda 向固定 Topic 连续发布同一 eventId 十次，验证一次 Ledger/Receipt 写入、九次语义重放、十次事务后 offset 提交、33 micros 向上取整、同 ID 不同事实冲突、Receipt 不可变，以及 audio token 拒绝 second 费率；CI migration-integration Job 强制执行。
+- `metering_cost_aggregation_test.go` 用真实 PostgreSQL 验证 Request 未终态、跨 Tenant/Project、Outbox 未全部落 Ledger 的安全拒绝，并证明 retryable-failed 加最终成功、partial-failed 与 failed Attempt 的费用都按独立价格事实计入 Request 分币种总额；CI migration-integration Job 强制执行。

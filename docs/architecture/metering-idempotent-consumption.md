@@ -20,6 +20,8 @@ Kafka record
 
 数据库、价格、Payload 或 offset 提交失败都会使进程返回安全分类错误，当前记录不会被确认。编排器重启后会从未提交 offset 重试。无效事件不会被静默跳过；DLQ、告警和人工恢复 Runbook 在 P13 上线门禁前补齐。
 
+P10-T06 的 Request 聚合还会比较 Outbox 与 Ledger：只要本 Request 有一个已持久化事件尚未形成 Ledger，就返回 pending 而不是暂时少计费。完整边界见 [`multi-attempt-cost-aggregation.md`](multi-attempt-cost-aggregation.md)。
+
 ## Receipt 幂等事务
 
 Migration 17 创建 `app.usage_event_receipts`。Receipt 以 eventId 为主键，保存通过严格校验后规范化 JSON 的 SHA-256、Schema 版本、消费者组和消费时间，并通过延迟外键绑定同一 eventId 的 Usage Ledger。Receipt 和 Ledger 在同一事务中一起提交或一起回滚。
