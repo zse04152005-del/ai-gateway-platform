@@ -96,7 +96,7 @@ type TokenCount struct {
 
 标准维度包括 Input、Output、Cache Read、Cache Write、Reasoning、Audio Input 和 Audio Output。Cache Read 可能是 Input 的子集，也可能是独立可计费 Meter；本层不做相加假设，价格版本负责解释。
 
-Usage 来源是 `provider | estimated | reconciled | adjustment`，`complete` 表示是否最终完整。Provider 和 Reconciled 来源必须携带 `UsageEvidence`。
+Usage 来源是 `provider | estimated | reconciled | adjustment`，`complete` 表示该来源是否认为维度已经完整，并不表示供应商精确度。Provider 和 Reconciled 来源必须携带 `UsageEvidence`。Estimated 来源必须携带内容无关的 `UsageEstimateMetadata`：`estimated=true`、tokenizer、tokenizer version、physical model、Deployment version 和 provider protocol version；其他来源禁止携带该字段，因此本地估算不能被序列化成供应商事实。
 
 ### 6.1 未知字段证据
 

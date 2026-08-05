@@ -25,6 +25,8 @@ Tenant/Request/时间索引用于请求账单时间线，Request/Attempt/时间�
 
 Migration 15 追加 `price_version_id` 与 `amount_micros`：每条 Usage 必须通过 `(price_version_id, token_type)` 复合外键锁定一条已发布且在 `observed_at` 生效的费率，币种、区域和单位由不可变 PriceVersion 导出。P10-T05 Consumer 同时要求事件 `billing_unit` 与费率单位完全匹配，并以整数向上取整保存金额。P10-T06 已按 [`multi-attempt-cost-aggregation.md`](multi-attempt-cost-aggregation.md) 从不可变分录即时重建全部 Attempt 金额；修正引用属于 P10-T08。后续字段只能通过追加迁移扩展，不能修改已应用的 Migration 13。
 
+Migration 19 追加 `event_schema_version` 与 tokenizer/model 证据列。Schema v1 历史行保持证据为空；Schema v2 的 `source=estimated` 行必须完整保存 tokenizer/version、physical model、Deployment version 与 provider protocol version，其他来源必须为空。Consumer 把 Event 的同一证据原样写入 Ledger，不能用当前目录值覆盖历史估算身份。完整边界见 [`local-token-estimation.md`](local-token-estimation.md)。
+
 ## 4. 验证
 
-真实 PostgreSQL 集成测试覆盖 Request 级与 Attempt 级分录、`event_id` 跨 Request 全局重复、Tenant/Request 和 Request/Attempt 错配、数量边界、有限分类、价格锁定、十次事件重放、Fingerprint 冲突、数据库级 UPDATE/DELETE 拒绝，以及敏感内容列缺失。CI 在临时数据库执行最新迁移的受控 Down/Up 恢复。
+真实 PostgreSQL 集成测试覆盖 Request 级与 Attempt 级分录、`event_id` 跨 Request 全局重复、Tenant/Request 和 Request/Attempt 错配、数量边界、有限分类、价格锁定、十次事件重放、Fingerprint 冲突、v1/v2 兼容、v2 估算证据完整性、Provider 禁带估算证据、数据库级 UPDATE/DELETE 拒绝，以及敏感内容列缺失。CI 在临时数据库执行最新迁移的受控 Down/Up 恢复。

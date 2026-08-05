@@ -250,6 +250,41 @@ func (usage NormalizedUsage) Validate() error {
 			return invalid("usage.unmapped_fields", "must be sorted and unique")
 		}
 	}
+	if usage.Source == UsageSourceEstimated {
+		if usage.Estimate == nil {
+			return invalid("usage.estimate", "must identify the local tokenizer and model")
+		}
+		if err := usage.Estimate.Validate(); err != nil {
+			return err
+		}
+	} else if usage.Estimate != nil {
+		return invalid("usage.estimate", "must be absent outside estimated usage")
+	}
+	return nil
+}
+
+// Validate checks that local estimate evidence is explicit, bounded, and
+// content-free. It does not claim the named tokenizer matches a provider's
+// private billing implementation.
+func (metadata UsageEstimateMetadata) Validate() error {
+	if !metadata.Estimated {
+		return invalid("usage.estimate.estimated", "must be true")
+	}
+	if !labelPattern.MatchString(metadata.Tokenizer) {
+		return invalid("usage.estimate.tokenizer", "must be a canonical tokenizer identifier")
+	}
+	if !labelPattern.MatchString(metadata.TokenizerVersion) {
+		return invalid("usage.estimate.tokenizer_version", "must be a canonical version identifier")
+	}
+	if err := validateIdentifier("usage.estimate.physical_model", metadata.PhysicalModel, 200); err != nil {
+		return err
+	}
+	if metadata.DeploymentVersion < 1 {
+		return invalid("usage.estimate.deployment_version", "must be positive")
+	}
+	if err := validateIdentifier("usage.estimate.provider_protocol_version", metadata.ProviderProtocolVersion, 64); err != nil {
+		return err
+	}
 	return nil
 }
 

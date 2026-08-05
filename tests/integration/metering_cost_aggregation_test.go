@@ -100,7 +100,7 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 	}
 	failedUsage := adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(1_000_000),
-		Source:      adapter.UsageSourceEstimated,
+		Source:      adapter.UsageSourceEstimated, Estimate: integrationEstimateMetadata(),
 	}
 	failedAttempt, err = recorder.CompleteAttemptForRetry(ctx, multi, failedAttempt, execution.AttemptOutcome{
 		AttemptStatus: execution.AttemptRetryableFailed, RequestStatus: execution.RequestRunning,
@@ -119,6 +119,7 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 		OutputTokens: adapter.Tokens(2_000_000),
 		Source:       adapter.UsageSourceEstimated,
 		Complete:     true,
+		Estimate:     integrationEstimateMetadataFor("model-b-physical"),
 	}
 	multi, successfulAttempt, err = recorder.CompleteAttempt(ctx, multi, successfulAttempt, execution.AttemptOutcome{
 		AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
@@ -145,6 +146,20 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 			{id: failedAttempt.ID, status: execution.AttemptRetryableFailed, amount: 2_500_000},
 			{id: successfulAttempt.ID, status: execution.AttemptSucceeded, amount: 5_000_000},
 		})
+	var ledgerSchemaVersion int
+	var ledgerTokenizer, ledgerPhysicalModel string
+	var ledgerDeploymentVersion int64
+	err = database.QueryRowContext(ctx, `
+		SELECT event_schema_version, tokenizer, physical_model, deployment_version
+		FROM app.usage_ledger_entries
+		WHERE attempt_id = $1`, successfulAttempt.ID,
+	).Scan(&ledgerSchemaVersion, &ledgerTokenizer, &ledgerPhysicalModel, &ledgerDeploymentVersion)
+	if err != nil || ledgerSchemaVersion != metering.UsageEventSchemaVersion ||
+		ledgerTokenizer != integrationEstimationAlgorithm || ledgerPhysicalModel != "model-b-physical" ||
+		ledgerDeploymentVersion != 1 {
+		t.Fatalf("estimated ledger evidence = %d/%q/%q/%d, error = %v",
+			ledgerSchemaVersion, ledgerTokenizer, ledgerPhysicalModel, ledgerDeploymentVersion, err)
+	}
 
 	partial := startExecutionRequest(ctx, t, recorder, meteringCostPartialRequestID)
 	partial, err = recorder.MarkRouting(ctx, partial)
@@ -161,6 +176,7 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 	}
 	partialUsage := adapter.NormalizedUsage{
 		OutputTokens: adapter.Tokens(400_000), Source: adapter.UsageSourceEstimated,
+		Estimate: integrationEstimateMetadata(),
 	}
 	partial, partialAttempt, err = recorder.CompleteAttempt(ctx, partial, partialAttempt, execution.AttemptOutcome{
 		AttemptStatus: execution.AttemptPartialFailed, RequestStatus: execution.RequestPartialFailed,
@@ -192,6 +208,7 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 	}
 	terminalFailedUsage := adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(200_000), Source: adapter.UsageSourceEstimated,
+		Estimate: integrationEstimateMetadata(),
 	}
 	failed, terminalFailedAttempt, err = recorder.CompleteAttempt(
 		ctx, failed, terminalFailedAttempt, execution.AttemptOutcome{
@@ -289,6 +306,8 @@ func loadMeteringCostEvents(
 			outbox.tenant_id::text, outbox.request_id, outbox.attempt_id::text,
 			outbox.deployment_id::text, outbox.token_type, outbox.billing_unit,
 			outbox.quantity, outbox.source, outbox.usage_complete,
+			outbox.tokenizer, outbox.tokenizer_version, outbox.physical_model,
+			outbox.deployment_version, outbox.provider_protocol_version,
 			outbox.observed_at, outbox.trace_id, outbox.span_id
 		FROM app.usage_event_outbox AS outbox
 		JOIN app.route_attempts AS attempt ON attempt.id = outbox.attempt_id
@@ -302,11 +321,14 @@ func loadMeteringCostEvents(
 	for rows.Next() {
 		var event metering.UsageEvent
 		var kind, tokenType, billingUnit, source string
+		var tokenizer, tokenizerVersion, physicalModel, providerProtocolVersion sql.NullString
+		var deploymentVersion sql.NullInt64
 		if err = rows.Scan(
 			&event.EventID, &event.SchemaVersion, &kind,
 			&event.TenantID, &event.RequestID, &event.AttemptID,
 			&event.DeploymentID, &tokenType, &billingUnit,
 			&event.Quantity, &source, &event.UsageComplete,
+			&tokenizer, &tokenizerVersion, &physicalModel, &deploymentVersion, &providerProtocolVersion,
 			&event.ObservedAt, &event.TraceID, &event.SpanID,
 		); err != nil {
 			t.Fatalf("scan metering cost event: %v", err)
@@ -315,6 +337,15 @@ func loadMeteringCostEvents(
 		event.TokenType = metering.TokenType(tokenType)
 		event.BillingUnit = metering.BillingUnit(billingUnit)
 		event.Source = metering.Source(source)
+		if event.SchemaVersion == metering.UsageEventSchemaVersion && event.Source == metering.SourceEstimated &&
+			tokenizer.Valid && tokenizerVersion.Valid && physicalModel.Valid && deploymentVersion.Valid &&
+			providerProtocolVersion.Valid {
+			event.Estimate = &adapter.UsageEstimateMetadata{
+				Estimated: true, Tokenizer: tokenizer.String, TokenizerVersion: tokenizerVersion.String,
+				PhysicalModel: physicalModel.String, DeploymentVersion: deploymentVersion.Int64,
+				ProviderProtocolVersion: providerProtocolVersion.String,
+			}
+		}
 		if event.Validate() != nil {
 			t.Fatalf("stored metering cost event is invalid: %+v", event)
 		}

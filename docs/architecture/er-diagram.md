@@ -186,6 +186,12 @@ erDiagram
       text token_type
       numeric quantity
       text source
+      smallint event_schema_version
+      text tokenizer
+      text tokenizer_version
+      text physical_model
+      bigint deployment_version
+      text provider_protocol_version
       uuid price_version_id FK
       numeric amount
       uuid adjusts_ledger_id FK

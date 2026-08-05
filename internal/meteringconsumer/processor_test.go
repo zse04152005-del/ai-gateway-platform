@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
 )
+
+const testEstimationAlgorithm = "utf8-byte-bound"
 
 func TestCanonicalUsageEventRejectsInvalidRecordsAndNormalizesJSON(t *testing.T) {
 	event := validConsumerEvent()
@@ -61,6 +64,34 @@ func TestCanonicalUsageEventRejectsInvalidRecordsAndNormalizesJSON(t *testing.T)
 		if _, _, err := canonicalUsageEvent(record.key, record.payload); !errors.Is(err, ErrInvalidEvent) {
 			t.Errorf("invalid[%d] error = %v", index, err)
 		}
+	}
+}
+
+func TestCanonicalUsageEventAcceptsVersionTwoEstimateEvidence(t *testing.T) {
+	event := validConsumerEvent()
+	event.SchemaVersion = metering.UsageEventSchemaVersion
+	event.UsageComplete = false
+	event.Estimate = &adapter.UsageEstimateMetadata{
+		Estimated: true, Tokenizer: testEstimationAlgorithm, TokenizerVersion: "v1",
+		PhysicalModel: "model-fixture", DeploymentVersion: 4,
+		ProviderProtocolVersion: "protocol-v1",
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	decoded, _, err := canonicalUsageEvent(event.EventID, payload)
+	if err != nil || decoded.Estimate == nil || !decoded.Estimate.Estimated ||
+		decoded.Estimate.Tokenizer != "utf8-byte-bound" || decoded.SchemaVersion != metering.UsageEventSchemaVersion {
+		t.Fatalf("canonicalUsageEvent(v2) = %+v, %v", decoded, err)
+	}
+	event.Estimate = nil
+	payload, err = json.Marshal(event)
+	if err != nil {
+		t.Fatalf("json.Marshal(missing evidence) error = %v", err)
+	}
+	if _, _, err := canonicalUsageEvent(event.EventID, payload); !errors.Is(err, ErrInvalidEvent) {
+		t.Fatalf("canonicalUsageEvent(missing v2 evidence) error = %v", err)
 	}
 }
 

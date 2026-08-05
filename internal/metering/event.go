@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	// UsageEventSchemaVersion is the immutable wire-contract version published by the gateway.
-	UsageEventSchemaVersion = 1
+	// UsageEventSchemaVersionV1 is the historical token-count contract accepted during upgrades.
+	UsageEventSchemaVersionV1 = 1
+	// UsageEventSchemaVersion is the current wire contract. Version 2 adds
+	// mandatory content-free tokenizer/model evidence to estimated facts.
+	UsageEventSchemaVersion = 2
 	// UsageEventTopic is the Kafka-compatible topic for normalized usage facts.
 	UsageEventTopic = "ai-gateway.usage.v1"
 )
@@ -48,21 +51,22 @@ type UsageIdentity struct {
 
 // UsageEvent is one independently priced positive usage fact on the versioned wire contract.
 type UsageEvent struct {
-	EventID       string         `json:"event_id"`
-	SchemaVersion int            `json:"schema_version"`
-	Kind          UsageEventKind `json:"kind"`
-	TenantID      string         `json:"tenant_id"`
-	RequestID     string         `json:"request_id"`
-	AttemptID     string         `json:"attempt_id"`
-	DeploymentID  string         `json:"deployment_id"`
-	TokenType     TokenType      `json:"token_type"`
-	BillingUnit   BillingUnit    `json:"billing_unit"`
-	Quantity      int64          `json:"quantity"`
-	Source        Source         `json:"source"`
-	UsageComplete bool           `json:"usage_complete"`
-	ObservedAt    time.Time      `json:"observed_at"`
-	TraceID       string         `json:"trace_id"`
-	SpanID        string         `json:"span_id"`
+	EventID       string                         `json:"event_id"`
+	SchemaVersion int                            `json:"schema_version"`
+	Kind          UsageEventKind                 `json:"kind"`
+	TenantID      string                         `json:"tenant_id"`
+	RequestID     string                         `json:"request_id"`
+	AttemptID     string                         `json:"attempt_id"`
+	DeploymentID  string                         `json:"deployment_id"`
+	TokenType     TokenType                      `json:"token_type"`
+	BillingUnit   BillingUnit                    `json:"billing_unit"`
+	Quantity      int64                          `json:"quantity"`
+	Source        Source                         `json:"source"`
+	UsageComplete bool                           `json:"usage_complete"`
+	Estimate      *adapter.UsageEstimateMetadata `json:"estimate,omitempty"`
+	ObservedAt    time.Time                      `json:"observed_at"`
+	TraceID       string                         `json:"trace_id"`
+	SpanID        string                         `json:"span_id"`
 }
 
 // EventIDFactory allocates one stable UUID for each independently priced fact.
@@ -116,6 +120,7 @@ func NewUsageEvents(
 			TokenType: dimension.tokenType, BillingUnit: BillingUnitToken,
 			Quantity: dimension.count.Value,
 			Source:   usage.Source, UsageComplete: usage.Complete,
+			Estimate:   usage.Clone().Estimate,
 			ObservedAt: identity.ObservedAt.UTC(), TraceID: identity.TraceID, SpanID: identity.SpanID,
 		}
 		if event.Validate() != nil {
@@ -134,10 +139,24 @@ func (event UsageEvent) Validate() error {
 		TraceID: event.TraceID, SpanID: event.SpanID, ObservedAt: event.ObservedAt,
 	}
 	kind, validSource := gatewayUsageKind(event.Source)
-	if event.SchemaVersion != UsageEventSchemaVersion || !priceUUIDPattern.MatchString(event.EventID) ||
+	if (event.SchemaVersion != UsageEventSchemaVersionV1 && event.SchemaVersion != UsageEventSchemaVersion) ||
+		!priceUUIDPattern.MatchString(event.EventID) ||
 		validateUsageIdentity(identity) != nil || !event.TokenType.Valid() ||
 		event.BillingUnit != BillingUnitToken ||
 		event.Quantity < 1 || event.Quantity > MaximumExactInteger || !validSource || event.Kind != kind {
+		return ErrInvalidUsageEvent
+	}
+	if event.SchemaVersion == UsageEventSchemaVersionV1 {
+		if event.Estimate != nil {
+			return ErrInvalidUsageEvent
+		}
+		return nil
+	}
+	if event.Source == SourceEstimated {
+		if event.Estimate == nil || event.Estimate.Validate() != nil {
+			return ErrInvalidUsageEvent
+		}
+	} else if event.Estimate != nil {
 		return ErrInvalidUsageEvent
 	}
 	return nil

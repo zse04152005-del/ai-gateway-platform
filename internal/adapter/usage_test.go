@@ -12,6 +12,8 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 )
 
+const testEstimationAlgorithm = "utf8-byte-bound"
+
 func TestUsageEvidencePreservesExactUnknownFieldsImmutably(t *testing.T) {
 	t.Parallel()
 
@@ -141,6 +143,21 @@ func TestNormalizedUsageValidation(t *testing.T) {
 	}
 	if err := adjustment.Validate(); err != nil {
 		t.Fatalf("negative adjustment should be valid: %v", err)
+	}
+	estimated := adapter.NormalizedUsage{
+		InputTokens: adapter.Tokens(3), Source: adapter.UsageSourceEstimated,
+		Estimate: testEstimateMetadata(),
+	}
+	if err := estimated.Validate(); err != nil {
+		t.Fatalf("versioned local estimate should be valid: %v", err)
+	}
+}
+
+func testEstimateMetadata() *adapter.UsageEstimateMetadata {
+	return &adapter.UsageEstimateMetadata{
+		Estimated: true, Tokenizer: testEstimationAlgorithm, TokenizerVersion: "v1",
+		PhysicalModel: "model-fixture", DeploymentVersion: 3,
+		ProviderProtocolVersion: "protocol-v1",
 	}
 }
 

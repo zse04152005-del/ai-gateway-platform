@@ -9,6 +9,8 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 )
 
+const testEstimationAlgorithm = "utf8-byte-bound"
+
 const (
 	testRequestID    = "request-execution-0001"
 	testTenantID     = "10000000-0000-4000-8000-000000000001"
@@ -105,5 +107,10 @@ func estimatedUsage() adapter.NormalizedUsage {
 	return adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(0), OutputTokens: adapter.Tokens(7),
 		Source: adapter.UsageSourceEstimated, Complete: false,
+		Estimate: &adapter.UsageEstimateMetadata{
+			Estimated: true, Tokenizer: testEstimationAlgorithm, TokenizerVersion: "v1",
+			PhysicalModel: "model-fixture", DeploymentVersion: 2,
+			ProviderProtocolVersion: "protocol-v1",
+		},
 	}
 }

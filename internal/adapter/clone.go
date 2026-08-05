@@ -52,6 +52,10 @@ func (chunk NormalizedChunk) Clone() NormalizedChunk {
 // and can only be accessed through a defensive copy.
 func (usage NormalizedUsage) Clone() NormalizedUsage {
 	cloned := usage
+	if usage.Estimate != nil {
+		estimate := *usage.Estimate
+		cloned.Estimate = &estimate
+	}
 	cloned.UnmappedFields = append([]string(nil), usage.UnmappedFields...)
 	return cloned
 }

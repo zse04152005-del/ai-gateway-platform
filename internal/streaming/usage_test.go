@@ -10,11 +10,13 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 )
 
+const testEstimationAlgorithm = "utf8-byte-bound"
+
 func TestUsageAggregatorPreservesThreeSourcesAndSelectsProviderFinal(t *testing.T) {
 	aggregator := newTestUsageAggregator(t, 8)
 	estimate := adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(8), OutputTokens: adapter.Tokens(2),
-		Source: adapter.UsageSourceEstimated, Complete: false,
+		Source: adapter.UsageSourceEstimated, Complete: false, Estimate: streamEstimateMetadata(),
 	}
 	if err := aggregator.SetLocalEstimate(estimate); err != nil {
 		t.Fatalf("SetLocalEstimate() error = %v", err)
@@ -69,6 +71,7 @@ func TestUsageAggregatorFallsBackFromMissingFinalToChunksThenEstimate(t *testing
 		aggregator := newTestUsageAggregator(t, 4)
 		if err := aggregator.SetLocalEstimate(adapter.NormalizedUsage{
 			InputTokens: adapter.Tokens(7), Source: adapter.UsageSourceEstimated,
+			Estimate: streamEstimateMetadata(),
 		}); err != nil {
 			t.Fatalf("SetLocalEstimate() error = %v", err)
 		}
@@ -86,7 +89,10 @@ func TestUsageAggregatorFallsBackFromMissingFinalToChunksThenEstimate(t *testing
 
 	t.Run("local estimate", func(t *testing.T) {
 		aggregator := newTestUsageAggregator(t, 2)
-		estimate := adapter.NormalizedUsage{OutputTokens: adapter.Tokens(5), Source: adapter.UsageSourceEstimated}
+		estimate := adapter.NormalizedUsage{
+			OutputTokens: adapter.Tokens(5), Source: adapter.UsageSourceEstimated,
+			Estimate: streamEstimateMetadata(),
+		}
 		if err := aggregator.SetLocalEstimate(estimate); err != nil {
 			t.Fatalf("SetLocalEstimate() error = %v", err)
 		}
@@ -134,7 +140,10 @@ func TestUsageAggregatorAcceptsPartialTerminalAndRejectsRegressions(t *testing.T
 
 func TestUsageAggregatorRejectsOrderSourceLimitAndDuplicateEstimate(t *testing.T) {
 	aggregator := newTestUsageAggregator(t, 1)
-	estimate := adapter.NormalizedUsage{InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated}
+	estimate := adapter.NormalizedUsage{
+		InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated,
+		Estimate: streamEstimateMetadata(),
+	}
 	if err := aggregator.SetLocalEstimate(estimate); err != nil {
 		t.Fatalf("SetLocalEstimate() error = %v", err)
 	}
@@ -155,6 +164,7 @@ func TestUsageAggregatorRejectsOrderSourceLimitAndDuplicateEstimate(t *testing.T
 	estimatedChunk := providerUsageDelta(t, 3, 4, 2, "estimated-source")
 	estimatedChunk.Usage.Source = adapter.UsageSourceEstimated
 	estimatedChunk.Usage.RawEvidence = adapter.UsageEvidence{}
+	estimatedChunk.Usage.Estimate = streamEstimateMetadata()
 	if err := aggregator.Observe(estimatedChunk); !errors.Is(err, ErrUsageAggregationInvalid) {
 		t.Fatalf("estimated Provider chunk error = %v", err)
 	}
@@ -195,6 +205,14 @@ func TestUsageAggregatorConcurrentSnapshotsRemainConsistent(t *testing.T) {
 	wait.Wait()
 	if snapshot := aggregator.Snapshot(); snapshot.UsageEvents != 64 || snapshot.ProviderChunks.Events != 64 {
 		t.Fatalf("concurrent Snapshot() = %+v", snapshot)
+	}
+}
+
+func streamEstimateMetadata() *adapter.UsageEstimateMetadata {
+	return &adapter.UsageEstimateMetadata{
+		Estimated: true, Tokenizer: testEstimationAlgorithm, TokenizerVersion: "v1",
+		PhysicalModel: "model-fixture", DeploymentVersion: 1,
+		ProviderProtocolVersion: "protocol-v1",
 	}
 }
 

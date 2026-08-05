@@ -394,7 +394,8 @@ func mustRedisTPMLimiter(
 func validTPMPlan(reserved uint64) TPMReservationPlan {
 	return TPMReservationPlan{
 		InputTokens: 1, MaximumOutputTokens: reserved - 1, ReservedTokens: reserved,
-		EstimatorMethod: "test-estimator", EstimatorVersion: "v1", Estimated: true,
+		Tokenizer: "test-estimator", TokenizerVersion: "v1", PhysicalModel: "model-fixture",
+		DeploymentVersion: 1, ProviderProtocolVersion: "protocol-v1", Estimated: true,
 	}
 }
 

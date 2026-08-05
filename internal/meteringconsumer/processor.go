@@ -14,6 +14,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
 )
 
@@ -107,11 +108,21 @@ func (processor *Processor) Process(ctx context.Context, key string, payload []b
 		INSERT INTO app.usage_ledger_entries (
 			event_id, tenant_id, request_id, attempt_id, token_type,
 			quantity, source, observed_at, created_at, created_by,
-			price_version_id, amount_micros
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+			price_version_id, amount_micros, event_schema_version,
+			tokenizer, tokenizer_version, physical_model, deployment_version,
+			provider_protocol_version
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+			$14, $15, $16, $17, $18
+		)`,
 		event.EventID, event.TenantID, event.RequestID, event.AttemptID,
 		event.TokenType, event.Quantity, event.Source, event.ObservedAt,
-		consumedAt, ledgerWriter, priceVersionID, amountMicros,
+		consumedAt, ledgerWriter, priceVersionID, amountMicros, event.SchemaVersion,
+		estimateField(event.Estimate, func(value adapter.UsageEstimateMetadata) any { return value.Tokenizer }),
+		estimateField(event.Estimate, func(value adapter.UsageEstimateMetadata) any { return value.TokenizerVersion }),
+		estimateField(event.Estimate, func(value adapter.UsageEstimateMetadata) any { return value.PhysicalModel }),
+		estimateField(event.Estimate, func(value adapter.UsageEstimateMetadata) any { return value.DeploymentVersion }),
+		estimateField(event.Estimate, func(value adapter.UsageEstimateMetadata) any { return value.ProviderProtocolVersion }),
 	)
 	if err != nil {
 		return Result{}, mapConsumerDatabaseError(err)
@@ -123,6 +134,16 @@ func (processor *Processor) Process(ctx context.Context, key string, payload []b
 		EventID: event.EventID, PriceVersionID: priceVersionID,
 		AmountMicros: amountMicros, Inserted: true,
 	}, nil
+}
+
+func estimateField(
+	metadata *adapter.UsageEstimateMetadata,
+	value func(adapter.UsageEstimateMetadata) any,
+) any {
+	if metadata == nil {
+		return nil
+	}
+	return value(*metadata)
 }
 
 func canonicalUsageEvent(key string, payload []byte) (metering.UsageEvent, [sha256.Size]byte, error) {

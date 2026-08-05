@@ -11,6 +11,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
 )
 
@@ -220,6 +221,8 @@ func (relay *Relay) claim(
 		RETURNING event.event_id, event.schema_version, event.kind,
 			event.tenant_id, event.request_id, event.attempt_id, event.deployment_id,
 			event.token_type, event.billing_unit, event.quantity, event.source, event.usage_complete,
+			event.tokenizer, event.tokenizer_version, event.physical_model,
+			event.deployment_version, event.provider_protocol_version,
 			event.observed_at, event.trace_id, event.span_id, event.publish_attempts`,
 		now, relay.batchSize, leaseID, now.Add(relay.leaseDuration))
 	if err != nil {
@@ -228,14 +231,26 @@ func (relay *Relay) claim(
 	events := make([]claimedEvent, 0, relay.batchSize)
 	for rows.Next() {
 		var event claimedEvent
+		var tokenizer, tokenizerVersion, physicalModel, providerProtocolVersion sql.NullString
+		var deploymentVersion sql.NullInt64
 		if err := rows.Scan(
 			&event.EventID, &event.SchemaVersion, &event.Kind,
 			&event.TenantID, &event.RequestID, &event.AttemptID, &event.DeploymentID,
 			&event.TokenType, &event.BillingUnit, &event.Quantity, &event.Source, &event.UsageComplete,
+			&tokenizer, &tokenizerVersion, &physicalModel, &deploymentVersion, &providerProtocolVersion,
 			&event.ObservedAt, &event.TraceID, &event.SpanID, &event.PublishAttempts,
 		); err != nil {
 			_ = rows.Close()
 			return nil, 0, newRelayError(ErrStoreUnavailable, err)
+		}
+		if event.SchemaVersion == metering.UsageEventSchemaVersion && event.Source == metering.SourceEstimated &&
+			tokenizer.Valid && tokenizerVersion.Valid && physicalModel.Valid && deploymentVersion.Valid &&
+			providerProtocolVersion.Valid {
+			event.Estimate = &adapter.UsageEstimateMetadata{
+				Estimated: true, Tokenizer: tokenizer.String, TokenizerVersion: tokenizerVersion.String,
+				PhysicalModel: physicalModel.String, DeploymentVersion: deploymentVersion.Int64,
+				ProviderProtocolVersion: providerProtocolVersion.String,
+			}
 		}
 		events = append(events, event)
 	}

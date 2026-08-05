@@ -257,6 +257,7 @@ func runPressureSession(
 	}
 	if err := aggregator.SetLocalEstimate(adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated,
+		Estimate: streamEstimateMetadata(),
 	}); err != nil {
 		result.setupErr = err
 		return result

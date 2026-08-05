@@ -13,7 +13,7 @@ P09-T04 在 P09-T02 本地快速保护之后增加全局 TPM 预留与结算。�
 5. `ReservedTokens = estimated input + maximum output`，总值限制在 Redis/Lua 可精确表示的 `2^53-1`；
 6. 计划固定标记 `Estimated=true`，不能作为 Provider 账单事实。
 
-P10-T07 才会提供模型 Tokenizer 与缓存；当前契约允许注入保守估算器，同时用 `EstimatorMethod`、`EstimatorVersion` 保留可复现证据。内置 `NormalizedJSONByteEstimator` 对通过校验的规范化请求 JSON 字节加固定 framing allowance，受所选模型最大输入上限约束，方法固定标为 `normalized-json-byte-bound/v1`，明确不是精确 Tokenizer。估算器错误或非法结果 fail closed，不能退化为只预留输出。
+P10-T07 已由 `internal/tokenestimate` 提供模型绑定的 Tokenizer 与有界摘要缓存，并通过 `BoundInputEstimator` 接入同一预留接口。计划现在保留 `Tokenizer`、`TokenizerVersion`、`PhysicalModel`、`DeploymentVersion`、`ProviderProtocolVersion` 和 `Estimated=true`；TPM 与计费回退不会形成两套漂移身份。内置 `NormalizedJSONByteEstimator` 仍作为兼容 fallback，对规范化请求 JSON 字节加固定 framing allowance，固定标为 `normalized-json-byte-bound/v1`，明确不是供应商精确 Tokenizer。估算器错误或非法结果 fail closed，不能退化为只预留输出。
 
 同一个 `ReservedTokens` 可传入本地 `LocalLimiter.Request.EstimatedTokens` 做单实例早期保护，再传给 Redis 全局层；本地分钟计数保持悲观值并自然过期，Redis 是完成后释放差额的全局权威。
 

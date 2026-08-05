@@ -72,6 +72,16 @@ func (usage NormalizedUsage) LogValue() slog.Value {
 			slog.Int("rawEvidenceBytes", usage.RawEvidence.Size()),
 		)
 	}
+	if usage.Estimate != nil {
+		attributes = append(attributes,
+			slog.Bool("estimated", usage.Estimate.Estimated),
+			slog.String("tokenizer", usage.Estimate.Tokenizer),
+			slog.String("tokenizerVersion", usage.Estimate.TokenizerVersion),
+			slog.String("physicalModel", usage.Estimate.PhysicalModel),
+			slog.Int64("deploymentVersion", usage.Estimate.DeploymentVersion),
+			slog.String("providerProtocolVersion", usage.Estimate.ProviderProtocolVersion),
+		)
+	}
 	if len(usage.UnmappedFields) > 0 {
 		attributes = append(attributes, slog.Int("unmappedFieldCount", len(usage.UnmappedFields)))
 	}

@@ -74,6 +74,7 @@ func TestUsageEventOutboxAtomicHandoffAndBoundedRelay(t *testing.T) {
 	usage := adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(13), OutputTokens: adapter.Tokens(3),
 		CacheReadTokens: adapter.Tokens(0), Source: adapter.UsageSourceEstimated, Complete: true,
+		Estimate: integrationEstimateMetadata(),
 	}
 	completedRequest, completedAttempt, err := recorder.CompleteAttempt(ctx, request, attempt, execution.AttemptOutcome{
 		AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
@@ -93,6 +94,76 @@ func TestUsageEventOutboxAtomicHandoffAndBoundedRelay(t *testing.T) {
 	if err != nil || pendingCount != 2 || distinctEventCount != 2 || positiveCount != 2 {
 		t.Fatalf("pending/distinct/positive events = %d/%d/%d, error = %v",
 			pendingCount, distinctEventCount, positiveCount, err)
+	}
+	var schemaVersion int
+	var tokenizer, tokenizerVersion, physicalModel, providerProtocolVersion string
+	var deploymentVersion int64
+	err = database.QueryRowContext(ctx, `
+		SELECT schema_version, tokenizer, tokenizer_version, physical_model,
+			deployment_version, provider_protocol_version
+		FROM app.usage_event_outbox
+		WHERE request_id = $1
+		ORDER BY token_type
+		LIMIT 1`, usageOutboxRequestID,
+	).Scan(
+		&schemaVersion, &tokenizer, &tokenizerVersion, &physicalModel,
+		&deploymentVersion, &providerProtocolVersion,
+	)
+	if err != nil || schemaVersion != metering.UsageEventSchemaVersion ||
+		tokenizer != integrationEstimationAlgorithm || tokenizerVersion != "v1" ||
+		physicalModel != "model-a-physical" || deploymentVersion != 1 || providerProtocolVersion != "v1" {
+		t.Fatalf("outbox estimate evidence = %d/%q/%q/%q/%d/%q, error = %v",
+			schemaVersion, tokenizer, tokenizerVersion, physicalModel, deploymentVersion, providerProtocolVersion, err)
+	}
+	invalidEstimateRows := []struct {
+		eventID, name           string
+		schemaVersion           int
+		kind, source            string
+		tokenizer               any
+		tokenizerVersion        any
+		physicalModel           any
+		deploymentVersion       any
+		providerProtocolVersion any
+	}{
+		{
+			eventID: "7d000000-0000-4000-8000-000000000011", name: "v2 estimate missing evidence",
+			schemaVersion: 2, kind: "usage.estimated", source: "estimated",
+		},
+		{
+			eventID: "7d000000-0000-4000-8000-000000000012", name: "provider carrying estimate evidence",
+			schemaVersion: 2, kind: "usage.observed", source: "provider",
+			tokenizer: integrationEstimationAlgorithm, tokenizerVersion: "v1", physicalModel: "model-a-physical",
+			deploymentVersion: int64(1), providerProtocolVersion: "v1",
+		},
+		{
+			eventID: "7d000000-0000-4000-8000-000000000013", name: "v1 carrying v2 evidence",
+			schemaVersion: 1, kind: "usage.estimated", source: "estimated",
+			tokenizer: integrationEstimationAlgorithm, tokenizerVersion: "v1", physicalModel: "model-a-physical",
+			deploymentVersion: int64(1), providerProtocolVersion: "v1",
+		},
+	}
+	for _, invalid := range invalidEstimateRows {
+		_, err = database.ExecContext(ctx, `
+			INSERT INTO app.usage_event_outbox (
+				event_id, schema_version, kind, tenant_id, request_id, attempt_id,
+				deployment_id, token_type, billing_unit, quantity, source, usage_complete,
+				tokenizer, tokenizer_version, physical_model, deployment_version,
+				provider_protocol_version, observed_at, trace_id, span_id, available_at,
+				created_at, created_by, updated_at
+			)
+			SELECT $1, $3, $4, tenant_id, request_id, attempt_id,
+				deployment_id, 'cache_read', billing_unit, 1, $5, false,
+				$6, $7, $8, $9, $10, observed_at, trace_id, span_id,
+				available_at, created_at, 'integration:usage-estimate-constraint', updated_at
+			FROM app.usage_event_outbox
+			WHERE request_id = $2
+			ORDER BY event_id
+			LIMIT 1`,
+			invalid.eventID, usageOutboxRequestID, invalid.schemaVersion, invalid.kind, invalid.source,
+			invalid.tokenizer, invalid.tokenizerVersion, invalid.physicalModel,
+			invalid.deploymentVersion, invalid.providerProtocolVersion,
+		)
+		expectExecutionSQLState(t, err, "23514")
 	}
 
 	relayNow := now.Add(time.Second)
@@ -179,6 +250,7 @@ func TestUsageEventOutboxAtomicHandoffAndBoundedRelay(t *testing.T) {
 	}
 	atomicUsage := adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated,
+		Estimate: integrationEstimateMetadata(),
 	}
 	_, _, err = recorder.CompleteAttempt(ctx, atomicRequest, atomicAttempt, execution.AttemptOutcome{
 		AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
@@ -259,6 +331,7 @@ func TestKafkaUsageEventSinkAcknowledgement(t *testing.T) {
 		BillingUnit:   metering.BillingUnitToken,
 		Quantity:      1,
 		Source:        metering.SourceEstimated,
+		Estimate:      integrationEstimateMetadata(),
 		ObservedAt:    time.Now().UTC(),
 		TraceID:       "7d000000000000000000000000000001",
 		SpanID:        "7d00000000000001",

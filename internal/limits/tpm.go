@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/limitpolicy"
 )
 
 const (
-	maximumTPMEstimatorLabelLength  = 64
 	normalizedJSONEstimatorOverhead = uint64(32)
 	normalizedJSONEstimatorMethod   = "normalized-json-byte-bound"
 	normalizedJSONEstimatorVersion  = "v1"
@@ -25,39 +23,53 @@ var (
 	// ErrTPMUsageUnavailable means terminal usage does not contain both primary
 	// token dimensions needed for settlement.
 	ErrTPMUsageUnavailable = errors.New("TPM actual usage is unavailable")
-
-	tpmEstimatorLabelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
 )
 
-// InputTokenEstimate is an explicitly estimated input count. Method and
-// Version make the estimate reproducible without claiming tokenizer accuracy.
+// InputTokenEstimate is an explicitly estimated input count. The tokenizer
+// identity and selected catalog model make the estimate reproducible without
+// claiming provider billing accuracy.
 type InputTokenEstimate struct {
-	Tokens  uint64
-	Method  string
-	Version string
+	Tokens                  uint64
+	Tokenizer               string
+	TokenizerVersion        string
+	PhysicalModel           string
+	DeploymentVersion       int64
+	ProviderProtocolVersion string
+	Estimated               bool
 }
 
-// InputTokenEstimator is the policy-neutral port used before admission. A
-// tokenizer-backed implementation is intentionally deferred to P10-T07.
+// InputTokenEstimator is the policy-neutral port used before admission. P10-T07
+// provides a model-bound implementation through tokenestimate.BoundInputEstimator.
 type InputTokenEstimator interface {
 	EstimateInputTokens(ctx context.Context, request adapter.NormalizedRequest) (InputTokenEstimate, error)
 }
 
-// NormalizedJSONByteEstimator is the bounded built-in fallback before P10-T07
-// provides model tokenizers. It counts the validated normalized JSON bytes plus
-// fixed framing overhead, so its method/version remain visibly approximate.
+// NormalizedJSONByteEstimator remains a bounded compatibility fallback. It
+// counts validated normalized JSON bytes plus fixed framing overhead, so its
+// tokenizer/model metadata remains visibly approximate.
 type NormalizedJSONByteEstimator struct {
 	maximumInputTokens uint64
+	metadata           adapter.UsageEstimateMetadata
 }
 
 // NewNormalizedJSONByteEstimator binds the fallback to a selected model's
 // maximum admissible input. Values beyond this bound fail closed.
-func NewNormalizedJSONByteEstimator(maximumInputTokens uint64) (*NormalizedJSONByteEstimator, error) {
+func NewNormalizedJSONByteEstimator(
+	maximumInputTokens uint64,
+	physicalModel string,
+	deploymentVersion int64,
+	providerProtocolVersion string,
+) (*NormalizedJSONByteEstimator, error) {
+	metadata := adapter.UsageEstimateMetadata{
+		Estimated: true, Tokenizer: normalizedJSONEstimatorMethod,
+		TokenizerVersion: normalizedJSONEstimatorVersion, PhysicalModel: physicalModel,
+		DeploymentVersion: deploymentVersion, ProviderProtocolVersion: providerProtocolVersion,
+	}
 	if maximumInputTokens <= normalizedJSONEstimatorOverhead ||
-		maximumInputTokens > limitpolicy.MaximumValue {
+		maximumInputTokens > limitpolicy.MaximumValue || metadata.Validate() != nil {
 		return nil, ErrInvalid
 	}
-	return &NormalizedJSONByteEstimator{maximumInputTokens: maximumInputTokens}, nil
+	return &NormalizedJSONByteEstimator{maximumInputTokens: maximumInputTokens, metadata: metadata}, nil
 }
 
 // EstimateInputTokens returns a deterministic, versioned approximation. The
@@ -89,8 +101,10 @@ func (estimator *NormalizedJSONByteEstimator) EstimateInputTokens(
 		return InputTokenEstimate{}, err
 	}
 	return InputTokenEstimate{
-		Tokens: bytes + normalizedJSONEstimatorOverhead,
-		Method: normalizedJSONEstimatorMethod, Version: normalizedJSONEstimatorVersion,
+		Tokens:    bytes + normalizedJSONEstimatorOverhead,
+		Tokenizer: estimator.metadata.Tokenizer, TokenizerVersion: estimator.metadata.TokenizerVersion,
+		PhysicalModel: estimator.metadata.PhysicalModel, DeploymentVersion: estimator.metadata.DeploymentVersion,
+		ProviderProtocolVersion: estimator.metadata.ProviderProtocolVersion, Estimated: true,
 	}, nil
 }
 
@@ -98,12 +112,15 @@ func (estimator *NormalizedJSONByteEstimator) EstimateInputTokens(
 // selected deployment can emit. Estimated is always true for this planning
 // path and prevents the value from being mistaken for provider billing usage.
 type TPMReservationPlan struct {
-	InputTokens         uint64
-	MaximumOutputTokens uint64
-	ReservedTokens      uint64
-	EstimatorMethod     string
-	EstimatorVersion    string
-	Estimated           bool
+	InputTokens             uint64
+	MaximumOutputTokens     uint64
+	ReservedTokens          uint64
+	Tokenizer               string
+	TokenizerVersion        string
+	PhysicalModel           string
+	DeploymentVersion       int64
+	ProviderProtocolVersion string
+	Estimated               bool
 }
 
 // TPMActual is the only default TPM settlement metric: primary input plus
@@ -151,9 +168,10 @@ func PlanTPMReservation(
 	}
 	return TPMReservationPlan{
 		InputTokens: estimate.Tokens, MaximumOutputTokens: maximumOutput,
-		ReservedTokens:  estimate.Tokens + maximumOutput,
-		EstimatorMethod: estimate.Method, EstimatorVersion: estimate.Version,
-		Estimated: true,
+		ReservedTokens: estimate.Tokens + maximumOutput,
+		Tokenizer:      estimate.Tokenizer, TokenizerVersion: estimate.TokenizerVersion,
+		PhysicalModel: estimate.PhysicalModel, DeploymentVersion: estimate.DeploymentVersion,
+		ProviderProtocolVersion: estimate.ProviderProtocolVersion, Estimated: true,
 	}, nil
 }
 
@@ -183,19 +201,30 @@ func ActualTPM(usage adapter.NormalizedUsage) (TPMActual, error) {
 }
 
 func (estimate InputTokenEstimate) validate() error {
-	if estimate.Tokens == 0 || estimate.Tokens > limitpolicy.MaximumValue ||
-		!validTPMEstimatorLabel(estimate.Method) || !validTPMEstimatorLabel(estimate.Version) {
+	metadata := adapter.UsageEstimateMetadata{
+		Estimated: estimate.Estimated, Tokenizer: estimate.Tokenizer,
+		TokenizerVersion: estimate.TokenizerVersion, PhysicalModel: estimate.PhysicalModel,
+		DeploymentVersion:       estimate.DeploymentVersion,
+		ProviderProtocolVersion: estimate.ProviderProtocolVersion,
+	}
+	if estimate.Tokens == 0 || estimate.Tokens > limitpolicy.MaximumValue || metadata.Validate() != nil {
 		return ErrTPMEstimateUnavailable
 	}
 	return nil
 }
 
 func (plan TPMReservationPlan) validate() error {
+	metadata := adapter.UsageEstimateMetadata{
+		Estimated: plan.Estimated, Tokenizer: plan.Tokenizer,
+		TokenizerVersion: plan.TokenizerVersion, PhysicalModel: plan.PhysicalModel,
+		DeploymentVersion:       plan.DeploymentVersion,
+		ProviderProtocolVersion: plan.ProviderProtocolVersion,
+	}
 	if !plan.Estimated || plan.InputTokens == 0 || plan.MaximumOutputTokens == 0 ||
 		plan.ReservedTokens == 0 || plan.ReservedTokens > limitpolicy.MaximumValue ||
 		plan.InputTokens > limitpolicy.MaximumValue-plan.MaximumOutputTokens ||
 		plan.ReservedTokens != plan.InputTokens+plan.MaximumOutputTokens ||
-		!validTPMEstimatorLabel(plan.EstimatorMethod) || !validTPMEstimatorLabel(plan.EstimatorVersion) {
+		metadata.Validate() != nil {
 		return ErrInvalid
 	}
 	return nil
@@ -215,9 +244,4 @@ func (actual TPMActual) validate() error {
 	default:
 		return ErrInvalid
 	}
-}
-
-func validTPMEstimatorLabel(value string) bool {
-	return len(value) >= 1 && len(value) <= maximumTPMEstimatorLabelLength &&
-		tpmEstimatorLabelPattern.MatchString(value)
 }

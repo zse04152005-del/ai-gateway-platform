@@ -84,7 +84,7 @@ func TestMeteringConsumerTenReplaysCreateOnePricedLedgerEntry(t *testing.T) {
 	}
 
 	event := metering.UsageEvent{
-		EventID: meteringConsumerEventID, SchemaVersion: metering.UsageEventSchemaVersion,
+		EventID: meteringConsumerEventID, SchemaVersion: metering.UsageEventSchemaVersionV1,
 		Kind:     metering.UsageEventEstimated,
 		TenantID: request.TenantID, RequestID: request.ID, AttemptID: attempt.ID,
 		DeploymentID: attempt.DeploymentID, TokenType: metering.TokenTypeInput,

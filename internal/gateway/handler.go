@@ -36,6 +36,18 @@ type ChatExecutor interface {
 	Execute(context.Context, routing.Selection, adapter.NormalizedRequest) (adapter.NormalizedResponse, error)
 }
 
+// LocalUsageEstimator produces gateway-owned fallback usage for one selected
+// physical model. Implementations must return UsageSourceEstimated and must not
+// reinterpret provider-reported usage.
+type LocalUsageEstimator interface {
+	EstimateUsage(
+		context.Context,
+		catalog.Deployment,
+		adapter.NormalizedRequest,
+		*adapter.NormalizedResponse,
+	) (adapter.NormalizedUsage, error)
+}
+
 // NewHandler protects every /v1 route while leaving unknown non-data-plane paths as safe 404s.
 func NewHandler(authenticator Authenticator, modelCatalog ModelCatalog, selectors ...RouteSelector) (http.Handler, error) {
 	if authenticator == nil {
@@ -71,6 +83,26 @@ func NewExecutableHandler(
 	)
 }
 
+// NewExecutableHandlerWithUsageEstimator installs the production local usage
+// fallback while preserving provider usage as the authoritative first choice.
+func NewExecutableHandlerWithUsageEstimator(
+	authenticator Authenticator,
+	modelCatalog ModelCatalog,
+	routeSelector RouteSelector,
+	executor ChatExecutor,
+	recorder execution.Recorder,
+	decisionRecorder routedecision.Recorder,
+	estimator LocalUsageEstimator,
+) (http.Handler, error) {
+	if estimator == nil {
+		return nil, errors.New("gateway local usage estimator must not be nil")
+	}
+	return newExecutableHandlerWithFailover(
+		authenticator, modelCatalog, routeSelector, executor, recorder, decisionRecorder,
+		DefaultFailoverOptions(), estimator,
+	)
+}
+
 // NewExecutableHandlerWithFailover installs an explicit request-wide failover envelope.
 func NewExecutableHandlerWithFailover(
 	authenticator Authenticator,
@@ -80,6 +112,21 @@ func NewExecutableHandlerWithFailover(
 	recorder execution.Recorder,
 	decisionRecorder routedecision.Recorder,
 	options FailoverOptions,
+) (http.Handler, error) {
+	return newExecutableHandlerWithFailover(
+		authenticator, modelCatalog, routeSelector, executor, recorder, decisionRecorder, options, nil,
+	)
+}
+
+func newExecutableHandlerWithFailover(
+	authenticator Authenticator,
+	modelCatalog ModelCatalog,
+	routeSelector RouteSelector,
+	executor ChatExecutor,
+	recorder execution.Recorder,
+	decisionRecorder routedecision.Recorder,
+	options FailoverOptions,
+	estimator LocalUsageEstimator,
 ) (http.Handler, error) {
 	if authenticator == nil {
 		return nil, errors.New("gateway authenticator must not be nil")
@@ -100,7 +147,7 @@ func NewExecutableHandlerWithFailover(
 		return nil, errors.New("gateway route decision recorder must not be nil")
 	}
 	failover, err := newNonStreamFailover(
-		routeSelector, executor, recorder, decisionRecorder, options, time.Now, defaultRetryWaiter,
+		routeSelector, executor, recorder, decisionRecorder, options, time.Now, defaultRetryWaiter, estimator,
 	)
 	if err != nil {
 		return nil, err

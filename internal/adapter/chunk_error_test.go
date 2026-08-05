@@ -17,6 +17,7 @@ func TestNormalizedChunkKindsValidate(t *testing.T) {
 		OutputTokens: adapter.Tokens(2),
 		Source:       adapter.UsageSourceEstimated,
 		Complete:     false,
+		Estimate:     testEstimateMetadata(),
 	}
 	tests := []struct {
 		name  string

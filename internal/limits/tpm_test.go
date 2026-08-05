@@ -10,13 +10,15 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/limitpolicy"
 )
 
+const testEstimationAlgorithm = "bytes-upper-bound"
+
 func TestNormalizedJSONByteEstimatorIsBoundedAndVersioned(t *testing.T) {
 	request := validTPMRequest()
 	payload, err := json.Marshal(request.Clone())
 	if err != nil {
 		t.Fatalf("json.Marshal(request) error = %v", err)
 	}
-	estimator, err := NewNormalizedJSONByteEstimator(10_000)
+	estimator, err := NewNormalizedJSONByteEstimator(10_000, "model-fixture", 7, "protocol-v1")
 	if err != nil {
 		t.Fatalf("NewNormalizedJSONByteEstimator() error = %v", err)
 	}
@@ -25,7 +27,8 @@ func TestNormalizedJSONByteEstimatorIsBoundedAndVersioned(t *testing.T) {
 		t.Fatalf("EstimateInputTokens() error = %v", err)
 	}
 	if estimate.Tokens != uint64(len(payload))+normalizedJSONEstimatorOverhead ||
-		estimate.Method != normalizedJSONEstimatorMethod || estimate.Version != normalizedJSONEstimatorVersion {
+		estimate.Tokenizer != normalizedJSONEstimatorMethod || estimate.TokenizerVersion != normalizedJSONEstimatorVersion ||
+		estimate.PhysicalModel != "model-fixture" || estimate.DeploymentVersion != 7 || !estimate.Estimated {
 		t.Fatalf("estimate = %+v", estimate)
 	}
 
@@ -36,10 +39,10 @@ func TestNormalizedJSONByteEstimatorIsBoundedAndVersioned(t *testing.T) {
 }
 
 func TestNormalizedJSONByteEstimatorFailsClosed(t *testing.T) {
-	if _, err := NewNormalizedJSONByteEstimator(0); !errors.Is(err, ErrInvalid) {
+	if _, err := NewNormalizedJSONByteEstimator(0, "model-fixture", 1, "protocol-v1"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("NewNormalizedJSONByteEstimator(zero) error = %v", err)
 	}
-	if _, err := NewNormalizedJSONByteEstimator(limitpolicy.MaximumValue + 1); !errors.Is(err, ErrInvalid) {
+	if _, err := NewNormalizedJSONByteEstimator(limitpolicy.MaximumValue+1, "model-fixture", 1, "protocol-v1"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("NewNormalizedJSONByteEstimator(large) error = %v", err)
 	}
 	if _, err := (*NormalizedJSONByteEstimator)(nil).EstimateInputTokens(
@@ -48,7 +51,7 @@ func TestNormalizedJSONByteEstimatorFailsClosed(t *testing.T) {
 		t.Fatalf("nil EstimateInputTokens() error = %v", err)
 	}
 	var nilContext context.Context
-	estimator, err := NewNormalizedJSONByteEstimator(10_000)
+	estimator, err := NewNormalizedJSONByteEstimator(10_000, "model-fixture", 1, "protocol-v1")
 	if err != nil {
 		t.Fatalf("NewNormalizedJSONByteEstimator() error = %v", err)
 	}
@@ -67,7 +70,9 @@ func TestNormalizedJSONByteEstimatorFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal(request) error = %v", err)
 	}
-	small, err := NewNormalizedJSONByteEstimator(uint64(len(payload)) + normalizedJSONEstimatorOverhead - 1)
+	small, err := NewNormalizedJSONByteEstimator(
+		uint64(len(payload))+normalizedJSONEstimatorOverhead-1, "model-fixture", 1, "protocol-v1",
+	)
 	if err != nil {
 		t.Fatalf("NewNormalizedJSONByteEstimator(small) error = %v", err)
 	}
@@ -78,16 +83,15 @@ func TestNormalizedJSONByteEstimatorFailsClosed(t *testing.T) {
 
 func TestPlanTPMReservationUsesRequestMaximumAndExplicitFallback(t *testing.T) {
 	request := validTPMRequest()
-	estimator := &recordingTPMEstimator{estimate: InputTokenEstimate{
-		Tokens: 37, Method: "bytes-upper-bound", Version: "v1",
-	}}
+	estimator := &recordingTPMEstimator{estimate: validInputEstimate(37)}
 
 	plan, err := PlanTPMReservation(context.Background(), estimator, request, 512)
 	if err != nil {
 		t.Fatalf("PlanTPMReservation(request maximum) error = %v", err)
 	}
 	if plan.InputTokens != 37 || plan.MaximumOutputTokens != 128 || plan.ReservedTokens != 165 ||
-		plan.EstimatorMethod != "bytes-upper-bound" || plan.EstimatorVersion != "v1" || !plan.Estimated {
+		plan.Tokenizer != "bytes-upper-bound" || plan.TokenizerVersion != "v1" ||
+		plan.PhysicalModel != "model-fixture" || plan.DeploymentVersion != 7 || !plan.Estimated {
 		t.Fatalf("request maximum plan = %+v", plan)
 	}
 	if len(estimator.requests) != 1 || estimator.requests[0].RequestID != request.RequestID {
@@ -107,9 +111,7 @@ func TestPlanTPMReservationUsesRequestMaximumAndExplicitFallback(t *testing.T) {
 
 func TestPlanTPMReservationFailsClosed(t *testing.T) {
 	request := validTPMRequest()
-	validEstimator := &recordingTPMEstimator{estimate: InputTokenEstimate{
-		Tokens: 1, Method: "safe", Version: "v1",
-	}}
+	validEstimator := &recordingTPMEstimator{estimate: validInputEstimate(1)}
 	var nilContext context.Context
 	invalidCalls := []struct {
 		name       string
@@ -145,9 +147,17 @@ func TestPlanTPMReservationFailsClosed(t *testing.T) {
 		estimator *recordingTPMEstimator
 	}{
 		{"dependency", &recordingTPMEstimator{err: estimatorError}},
-		{"zero", &recordingTPMEstimator{estimate: InputTokenEstimate{Method: "safe", Version: "v1"}}},
-		{"method", &recordingTPMEstimator{estimate: InputTokenEstimate{Tokens: 1, Method: "bad method", Version: "v1"}}},
-		{"version", &recordingTPMEstimator{estimate: InputTokenEstimate{Tokens: 1, Method: "safe", Version: ""}}},
+		{"zero", &recordingTPMEstimator{estimate: validInputEstimate(0)}},
+		{"method", &recordingTPMEstimator{estimate: func() InputTokenEstimate {
+			value := validInputEstimate(1)
+			value.Tokenizer = "bad method"
+			return value
+		}()}},
+		{"version", &recordingTPMEstimator{estimate: func() InputTokenEstimate {
+			value := validInputEstimate(1)
+			value.TokenizerVersion = ""
+			return value
+		}()}},
 	}
 	for _, test := range failures {
 		t.Run(test.name, func(t *testing.T) {
@@ -158,9 +168,7 @@ func TestPlanTPMReservationFailsClosed(t *testing.T) {
 		})
 	}
 
-	overflowEstimator := &recordingTPMEstimator{estimate: InputTokenEstimate{
-		Tokens: limitpolicy.MaximumValue, Method: "safe", Version: "v1",
-	}}
+	overflowEstimator := &recordingTPMEstimator{estimate: validInputEstimate(limitpolicy.MaximumValue)}
 	if _, err := PlanTPMReservation(context.Background(), overflowEstimator, request, 512); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("PlanTPMReservation(overflow) error = %v", err)
 	}
@@ -171,7 +179,7 @@ func TestActualTPMUsesOnlyPrimaryDimensions(t *testing.T) {
 		InputTokens: adapter.Tokens(11), OutputTokens: adapter.Tokens(7),
 		CacheReadTokens: adapter.Tokens(5), ReasoningTokens: adapter.Tokens(3),
 		AudioInputTokens: adapter.Tokens(2), AudioOutputTokens: adapter.Tokens(1),
-		Source: adapter.UsageSourceEstimated, Complete: false,
+		Source: adapter.UsageSourceEstimated, Complete: false, Estimate: validUsageEstimateMetadata(),
 	}
 	actual, err := ActualTPM(usage)
 	if err != nil {
@@ -185,15 +193,31 @@ func TestActualTPMUsesOnlyPrimaryDimensions(t *testing.T) {
 
 func TestActualTPMRequiresBothPrimaryDimensions(t *testing.T) {
 	invalid := []adapter.NormalizedUsage{
-		{InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated},
-		{OutputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated},
-		{InputTokens: adapter.Tokens(-1), OutputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated},
+		{InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated, Estimate: validUsageEstimateMetadata()},
+		{OutputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated, Estimate: validUsageEstimateMetadata()},
+		{InputTokens: adapter.Tokens(-1), OutputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated, Estimate: validUsageEstimateMetadata()},
 		{InputTokens: adapter.Tokens(1), OutputTokens: adapter.Tokens(1), Source: adapter.UsageSourceAdjustment},
 	}
 	for index, usage := range invalid {
 		if _, err := ActualTPM(usage); !errors.Is(err, ErrTPMUsageUnavailable) {
 			t.Fatalf("ActualTPM(invalid %d) error = %v", index, err)
 		}
+	}
+}
+
+func validInputEstimate(tokens uint64) InputTokenEstimate {
+	return InputTokenEstimate{
+		Tokens: tokens, Tokenizer: testEstimationAlgorithm, TokenizerVersion: "v1",
+		PhysicalModel: "model-fixture", DeploymentVersion: 7,
+		ProviderProtocolVersion: "protocol-v1", Estimated: true,
+	}
+}
+
+func validUsageEstimateMetadata() *adapter.UsageEstimateMetadata {
+	return &adapter.UsageEstimateMetadata{
+		Estimated: true, Tokenizer: testEstimationAlgorithm, TokenizerVersion: "v1",
+		PhysicalModel: "model-fixture", DeploymentVersion: 7,
+		ProviderProtocolVersion: "protocol-v1",
 	}
 }
 

@@ -74,6 +74,7 @@ func TestGatewayExecutionLifecycle(t *testing.T) {
 		usage := adapter.NormalizedUsage{
 			InputTokens: adapter.Tokens(0), OutputTokens: adapter.Tokens(9),
 			Source: adapter.UsageSourceEstimated, Complete: false,
+			Estimate: integrationEstimateMetadata(),
 		}
 		completedRequest, completedAttempt, err := recorder.CompleteAttempt(ctx, running, attempt, execution.AttemptOutcome{
 			AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
@@ -126,7 +127,7 @@ func TestGatewayExecutionLifecycle(t *testing.T) {
 		}
 		firstUsage := adapter.NormalizedUsage{
 			InputTokens: adapter.Tokens(8), OutputTokens: adapter.Tokens(1),
-			Source: adapter.UsageSourceEstimated, Complete: false,
+			Source: adapter.UsageSourceEstimated, Complete: false, Estimate: integrationEstimateMetadata(),
 		}
 		completedFirst, err := recorder.CompleteAttemptForRetry(ctx, running, firstAttempt, execution.AttemptOutcome{
 			AttemptStatus: execution.AttemptRetryableFailed, RequestStatus: execution.RequestRunning,
@@ -148,6 +149,7 @@ func TestGatewayExecutionLifecycle(t *testing.T) {
 		secondUsage := adapter.NormalizedUsage{
 			InputTokens: adapter.Tokens(8), OutputTokens: adapter.Tokens(5),
 			Source: adapter.UsageSourceEstimated, Complete: false,
+			Estimate: integrationEstimateMetadataFor("model-b-physical"),
 		}
 		completedRequest, completedSecond, err := recorder.CompleteAttempt(ctx, running, secondAttempt, execution.AttemptOutcome{
 			AttemptStatus: execution.AttemptSucceeded, RequestStatus: execution.RequestSucceeded,
@@ -238,6 +240,7 @@ func TestGatewayExecutionLifecycle(t *testing.T) {
 		}
 		partialUsage := adapter.NormalizedUsage{
 			OutputTokens: adapter.Tokens(4), Source: adapter.UsageSourceEstimated, Complete: false,
+			Estimate: integrationEstimateMetadata(),
 		}
 		partialOutcome := execution.AttemptOutcome{
 			AttemptStatus: execution.AttemptPartialFailed, RequestStatus: execution.RequestPartialFailed,

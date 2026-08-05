@@ -9,12 +9,14 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
 )
 
+const testEstimationAlgorithm = "utf8-byte-bound"
+
 func TestNewUsageEventsPreservesIndependentPositiveFacts(t *testing.T) {
 	identity := validUsageIdentity()
 	usage := adapter.NormalizedUsage{
 		InputTokens: adapter.Tokens(13), OutputTokens: adapter.Tokens(3),
 		CacheReadTokens: adapter.Tokens(5), CacheWriteTokens: adapter.Tokens(0),
-		Source: adapter.UsageSourceEstimated, Complete: true,
+		Source: adapter.UsageSourceEstimated, Complete: true, Estimate: validEstimateMetadata(),
 	}
 	ids := []string{
 		"7c000000-0000-4000-8000-000000000001",
@@ -42,6 +44,7 @@ func TestNewUsageEventsPreservesIndependentPositiveFacts(t *testing.T) {
 			event.TokenType != wantTypes[eventIndex] || event.Quantity != wantQuantities[eventIndex] ||
 			event.BillingUnit != metering.BillingUnitToken ||
 			event.Source != metering.SourceEstimated || !event.UsageComplete ||
+			event.SchemaVersion != metering.UsageEventSchemaVersion || event.Estimate == nil ||
 			event.ObservedAt.Location() != time.UTC || event.Validate() != nil {
 			t.Fatalf("events[%d] = %+v", eventIndex, event)
 		}
@@ -62,7 +65,10 @@ func TestNewUsageEventsPreservesIndependentPositiveFacts(t *testing.T) {
 
 func TestNewUsageEventsRejectsUnsafeIdentitySourceQuantityAndIDs(t *testing.T) {
 	identity := validUsageIdentity()
-	usage := adapter.NormalizedUsage{InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated}
+	usage := adapter.NormalizedUsage{
+		InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated,
+		Estimate: validEstimateMetadata(),
+	}
 	invalidIdentities := []metering.UsageIdentity{
 		{},
 		mutateUsageIdentity(identity, func(value *metering.UsageIdentity) { value.RequestID = "short" }),
@@ -106,7 +112,10 @@ func TestNewUsageEventsRejectsUnsafeIdentitySourceQuantityAndIDs(t *testing.T) {
 func TestUsageEventValidationRequiresCompatibleKindAndCompleteContract(t *testing.T) {
 	events, err := metering.NewUsageEvents(
 		validUsageIdentity(),
-		&adapter.NormalizedUsage{InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated},
+		&adapter.NormalizedUsage{
+			InputTokens: adapter.Tokens(1), Source: adapter.UsageSourceEstimated,
+			Estimate: validEstimateMetadata(),
+		},
 		validEventIDFactory(),
 	)
 	if err != nil || len(events) != 1 {
@@ -115,17 +124,26 @@ func TestUsageEventValidationRequiresCompatibleKindAndCompleteContract(t *testin
 	valid := events[0]
 	invalid := []metering.UsageEvent{
 		{},
-		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.SchemaVersion = 2 }),
+		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.SchemaVersion = 3 }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.Kind = metering.UsageEventObserved }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.TokenType = "total" }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.BillingUnit = metering.BillingUnitSecond }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.Quantity = 0 }),
 		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.Source = metering.SourceReconciled }),
+		mutateUsageEvent(valid, func(value *metering.UsageEvent) { value.Estimate = nil }),
 	}
 	for index, event := range invalid {
 		if err := event.Validate(); !errors.Is(err, metering.ErrInvalidUsageEvent) {
 			t.Errorf("invalid event[%d] error = %v", index, err)
 		}
+	}
+}
+
+func validEstimateMetadata() *adapter.UsageEstimateMetadata {
+	return &adapter.UsageEstimateMetadata{
+		Estimated: true, Tokenizer: testEstimationAlgorithm, TokenizerVersion: "v1",
+		PhysicalModel: "model-fixture", DeploymentVersion: 3,
+		ProviderProtocolVersion: "protocol-v1",
 	}
 }
 

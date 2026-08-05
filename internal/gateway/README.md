@@ -12,6 +12,8 @@ P08-T05 的 `CircuitChatExecutor` 位于 `ObservedChatExecutor` 外层，在真�
 
 P08-T07 为非流式生产请求增加有界故障切换：默认最多 3 个物理 Attempt、30 秒统一总时限和 250ms 下一 Attempt 最小窗口。失败 Attempt 先独立落库并保持父 Request running，再排除已尝试 Deployment 重选；普通 retry 无备用时才允许同一固定目标，different-only 永不回退旧目标。公共响应在最终投影和终态落库前不写字节，`gateway.attempt_count` 返回真实尝试数；所有 Attempt 的已知 Usage 独立保留给 P10 聚合。
 
+P10-T07 在每次选定 Deployment 后提供本地 Usage fallback。Provider Usage 只要存在就保持原样且优先；仅在完全缺失时调用 `tokenestimate`。成功响应可估算 Input/Output，已提交但响应不可验证的失败只保留 Input 估算；未提交失败不制造费用。所有本地结果固定为 `source=estimated`、携带版本化 tokenizer/model 证据，Gateway 会拒绝任何试图返回 `source=provider` 的本地估算器。
+
 P08-T08 在每次 Selector 评估后、创建 Attempt 前追加无内容 RouteDecision，并在每个失败 Attempt 结束前追加 RetryDecision。初选、无候选、排除旧目标、固定目标复用和最终 `no_retry` 都可形成 requestId 因果链。任一必需决策记录失败都 fail closed：初选记录失败不调用 Provider，retry 记录失败则终结当前 Attempt 且不创建下一 Attempt。公开诊断 API 仍由 P16-T06 实现。
 
 P08-T09 用 64 路并发全故障回归锁定线性放大上界：默认三次 Attempt 时精确产生 `3N` 个 Provider 调用和 Attempt，单 requestId 始终串行。推进时钟证明共享总 Deadline 不会按 Attempt 重置；额外费用被拒绝时只保留首个物理调用及其完整计量/决策事实。

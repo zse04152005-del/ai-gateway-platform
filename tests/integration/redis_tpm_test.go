@@ -350,7 +350,8 @@ func redisTPMBindings(soft, hard uint64) []limits.Binding {
 func redisTPMPlan(reserved uint64) limits.TPMReservationPlan {
 	return limits.TPMReservationPlan{
 		InputTokens: 1, MaximumOutputTokens: reserved - 1, ReservedTokens: reserved,
-		EstimatorMethod: "integration-estimator", EstimatorVersion: "v1", Estimated: true,
+		Tokenizer: "integration-estimator", TokenizerVersion: "v1", PhysicalModel: "model-fixture",
+		DeploymentVersion: 1, ProviderProtocolVersion: "protocol-v1", Estimated: true,
 	}
 }
 

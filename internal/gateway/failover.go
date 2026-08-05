@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/catalog"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/retry"
@@ -63,6 +64,7 @@ type nonStreamFailover struct {
 	options   FailoverOptions
 	now       func() time.Time
 	wait      retryWaiter
+	estimator LocalUsageEstimator
 }
 
 func newNonStreamFailover(
@@ -73,9 +75,17 @@ func newNonStreamFailover(
 	options FailoverOptions,
 	now func() time.Time,
 	wait retryWaiter,
+	estimators ...LocalUsageEstimator,
 ) (*nonStreamFailover, error) {
 	if selector == nil || executor == nil || recorder == nil || decisions == nil || now == nil || wait == nil {
 		return nil, ErrFailoverInvalid
+	}
+	if len(estimators) > 1 {
+		return nil, ErrFailoverInvalid
+	}
+	var estimator LocalUsageEstimator
+	if len(estimators) == 1 {
+		estimator = estimators[0]
 	}
 	if err := options.Validate(); err != nil {
 		return nil, err
@@ -85,7 +95,7 @@ func newNonStreamFailover(
 	}
 	return &nonStreamFailover{
 		selector: selector, executor: executor, recorder: recorder, decisions: decisions,
-		options: options, now: now, wait: wait,
+		options: options, now: now, wait: wait, estimator: estimator,
 	}, nil
 }
 
@@ -137,6 +147,9 @@ func (failover *nonStreamFailover) Execute(
 
 		result, attemptErr := failover.executor.Execute(
 			executionContext, selection, providerRequest.Clone(),
+		)
+		result = failover.withLocalUsageEstimate(
+			executionContext, selection.Candidate.Deployment, providerRequest, result, attemptErr,
 		)
 		var projected chatCompletionResponse
 		if attemptErr == nil {
@@ -232,6 +245,32 @@ func (failover *nonStreamFailover) Execute(
 	}
 }
 
+func (failover *nonStreamFailover) withLocalUsageEstimate(
+	ctx context.Context,
+	deployment catalog.Deployment,
+	request adapter.NormalizedRequest,
+	result adapter.NormalizedResponse,
+	attemptErr error,
+) adapter.NormalizedResponse {
+	if failover == nil || failover.estimator == nil || result.Usage != nil ||
+		(attemptErr != nil && submissionState(attemptErr) == retry.NotSubmitted) {
+		return result
+	}
+	var response *adapter.NormalizedResponse
+	if result.Validate() == nil {
+		cloned := result.Clone()
+		response = &cloned
+	}
+	estimated, err := failover.estimator.EstimateUsage(ctx, deployment, request.Clone(), response)
+	if err != nil || estimated.Validate() != nil || estimated.Source != adapter.UsageSourceEstimated ||
+		estimated.Complete || estimated.Estimate == nil || !estimated.Estimate.Estimated {
+		return result
+	}
+	cloned := result.Clone()
+	cloned.Usage = &estimated
+	return cloned
+}
+
 func (failover *nonStreamFailover) selectNext(
 	ctx context.Context,
 	request routing.SelectionRequest,
@@ -267,6 +306,10 @@ func failedOutcomeWithKnownUsage(err error, result adapter.NormalizedResponse) e
 		outcome.HeadersReceived = true
 		outcome.ProviderRequestID = cloned.ProviderRequestID
 		outcome.Usage = cloned.Usage
+	} else if result.Usage != nil && result.Usage.Source == adapter.UsageSourceEstimated &&
+		result.Usage.Validate() == nil {
+		usage := result.Usage.Clone()
+		outcome.Usage = &usage
 	}
 	return outcome
 }

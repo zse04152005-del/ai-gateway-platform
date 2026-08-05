@@ -14,7 +14,7 @@ P10-T04 把每个 RouteAttempt 的终态 Usage 转换为内容无关、可独立
 
 因此 Provider 已产生费用的 Attempt 不会出现“终态已提交但发布事实丢失”的窗口。相同 Request、Attempt、Token 类型与来源只能存在一条 Outbox 事实；唯一约束冲突会使整个终态事务回滚，而不是覆盖旧事件。
 
-缺失和显式零值不产生可计费事件。Gateway 只允许 Provider Usage 映射为 `usage.observed/provider`，本地估算映射为 `usage.estimated/estimated`；`reconciled` 和 `adjustment` 必须由后续受信任流程生成，Gateway 不能冒充。当前 Chat Usage 可发布 input、output、cache read/write、reasoning、audio input/output 七个维度；图像维度保留在领域与 Schema 契约中，等 Adapter 提供对应事实后再启用。
+缺失和显式零值不产生可计费事件。Gateway 只允许 Provider Usage 映射为 `usage.observed/provider`，本地估算映射为 `usage.estimated/estimated`；`reconciled` 和 `adjustment` 必须由后续受信任流程生成，Gateway 不能冒充。P10-T07 起新事件使用 Schema v2：estimated 事件必须携带 `estimated=true`、tokenizer/version、physical model、Deployment version 和 provider protocol version，Provider 事件禁止携带这些字段。Consumer 在同一 `ai-gateway.usage.v1` Topic 上继续接受无估算元数据的历史 Schema v1，避免升级窗口遗留事件失效。当前 Chat Usage 可发布 input、output、cache read/write、reasoning、audio input/output 七个维度；图像维度保留在领域与 Schema 契约中，等 Adapter 提供对应事实后再启用。
 
 ## 异步 Relay
 

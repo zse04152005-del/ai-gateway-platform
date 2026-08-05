@@ -373,22 +373,42 @@ func insertUsageEventsInTransaction(
 		quantities[index] = event.Quantity
 	}
 	first := events[0]
+	var tokenizer, tokenizerVersion, physicalModel, providerProtocolVersion any
+	var deploymentVersion any
+	if first.Estimate != nil {
+		tokenizer = first.Estimate.Tokenizer
+		tokenizerVersion = first.Estimate.TokenizerVersion
+		physicalModel = first.Estimate.PhysicalModel
+		deploymentVersion = first.Estimate.DeploymentVersion
+		providerProtocolVersion = first.Estimate.ProviderProtocolVersion
+	}
 	result, err := transaction.ExecContext(ctx, `
 		INSERT INTO app.usage_event_outbox (
 			event_id, schema_version, kind, tenant_id, request_id, attempt_id,
 			deployment_id, token_type, billing_unit, quantity, source, usage_complete,
+			tokenizer, tokenizer_version, physical_model, deployment_version,
+			provider_protocol_version,
 			observed_at, trace_id, span_id, available_at,
 			created_at, created_by, updated_at
 		)
 		SELECT facts.event_id, $2, $3, $4, $5, $6,
 			$7, facts.token_type, facts.billing_unit, facts.quantity, $11, $12,
+			$16, $17, $18, $19, $20,
 			$13, $14, $15, $13, $13, 'gateway:usage-publisher', $13
 		FROM unnest($1::uuid[], $8::text[], $9::text[], $10::bigint[])
-			AS facts(event_id, token_type, billing_unit, quantity)`,
+			AS facts(event_id, token_type, billing_unit, quantity)
+		JOIN app.deployments AS deployment ON deployment.id = $7
+		WHERE $11 <> 'estimated'
+		   OR (
+			deployment.physical_model = $18
+			AND deployment.version = $19
+			AND deployment.capabilities->>'provider_protocol_version' = $20
+		   )`,
 		pq.Array(eventIDs), first.SchemaVersion, first.Kind, first.TenantID,
 		first.RequestID, first.AttemptID, first.DeploymentID,
 		pq.Array(tokenTypes), pq.Array(billingUnits), pq.Array(quantities), first.Source,
 		first.UsageComplete, first.ObservedAt, first.TraceID, first.SpanID,
+		tokenizer, tokenizerVersion, physicalModel, deploymentVersion, providerProtocolVersion,
 	)
 	if err != nil {
 		return mapDatabaseError(err)
@@ -573,15 +593,16 @@ func scanAttempt(scanner rowScanner) (RouteAttempt, error) {
 }
 
 type usageSummary struct {
-	InputTokens       *int64              `json:"input_tokens,omitempty"`
-	OutputTokens      *int64              `json:"output_tokens,omitempty"`
-	CacheReadTokens   *int64              `json:"cache_read_tokens,omitempty"`
-	CacheWriteTokens  *int64              `json:"cache_write_tokens,omitempty"`
-	ReasoningTokens   *int64              `json:"reasoning_tokens,omitempty"`
-	AudioInputTokens  *int64              `json:"audio_input_tokens,omitempty"`
-	AudioOutputTokens *int64              `json:"audio_output_tokens,omitempty"`
-	Source            adapter.UsageSource `json:"source"`
-	Complete          bool                `json:"complete"`
+	InputTokens       *int64                         `json:"input_tokens,omitempty"`
+	OutputTokens      *int64                         `json:"output_tokens,omitempty"`
+	CacheReadTokens   *int64                         `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens  *int64                         `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens   *int64                         `json:"reasoning_tokens,omitempty"`
+	AudioInputTokens  *int64                         `json:"audio_input_tokens,omitempty"`
+	AudioOutputTokens *int64                         `json:"audio_output_tokens,omitempty"`
+	Source            adapter.UsageSource            `json:"source"`
+	Complete          bool                           `json:"complete"`
+	Estimate          *adapter.UsageEstimateMetadata `json:"estimate,omitempty"`
 }
 
 func marshalUsageSummary(usage *adapter.NormalizedUsage) ([]byte, error) {
@@ -596,6 +617,7 @@ func marshalUsageSummary(usage *adapter.NormalizedUsage) ([]byte, error) {
 		CacheReadTokens: tokenValue(usage.CacheReadTokens), CacheWriteTokens: tokenValue(usage.CacheWriteTokens),
 		ReasoningTokens: tokenValue(usage.ReasoningTokens), AudioInputTokens: tokenValue(usage.AudioInputTokens),
 		AudioOutputTokens: tokenValue(usage.AudioOutputTokens), Source: usage.Source, Complete: usage.Complete,
+		Estimate: usage.Clone().Estimate,
 	}
 	encoded, err := json.Marshal(summary)
 	if err != nil {

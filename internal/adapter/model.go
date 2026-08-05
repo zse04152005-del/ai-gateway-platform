@@ -260,6 +260,19 @@ type TokenCount struct {
 	Present bool
 }
 
+// UsageEstimateMetadata identifies the local algorithm and selected catalog
+// model that produced an estimated Usage fact. Estimated is deliberately
+// redundant with UsageSourceEstimated so serialized facts cannot be mistaken
+// for provider-reported counts after being separated from their parent value.
+type UsageEstimateMetadata struct {
+	Estimated               bool   `json:"estimated"`
+	Tokenizer               string `json:"tokenizer"`
+	TokenizerVersion        string `json:"tokenizer_version"`
+	PhysicalModel           string `json:"physical_model"`
+	DeploymentVersion       int64  `json:"deployment_version"`
+	ProviderProtocolVersion string `json:"provider_protocol_version"`
+}
+
 // NormalizedUsage preserves independent billing dimensions. Cache counts are not
 // assumed to be additive to or subsets of input tokens; price semantics decide that later.
 type NormalizedUsage struct {
@@ -272,6 +285,7 @@ type NormalizedUsage struct {
 	AudioOutputTokens TokenCount
 	Source            UsageSource
 	Complete          bool
+	Estimate          *UsageEstimateMetadata
 	RawEvidence       UsageEvidence
 	UnmappedFields    []string
 }

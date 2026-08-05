@@ -33,6 +33,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/proxy"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routedecision"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/routing"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/tokenestimate"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/upstreamhttp"
 )
 
@@ -203,8 +204,13 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create active health scheduler: %w", err)
 	}
-	applicationHandler, err := gateway.NewExecutableHandler(
-		authenticator, modelCatalog, routeSelector, circuitChatExecutor, executionRecorder, routeDecisionStore,
+	usageEstimator, err := tokenestimate.New(tokenestimate.Options{})
+	if err != nil {
+		return fmt.Errorf("create local usage estimator: %w", err)
+	}
+	applicationHandler, err := gateway.NewExecutableHandlerWithUsageEstimator(
+		authenticator, modelCatalog, routeSelector, circuitChatExecutor, executionRecorder,
+		routeDecisionStore, usageEstimator,
 	)
 	if err != nil {
 		return fmt.Errorf("create gateway application handler: %w", err)
