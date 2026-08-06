@@ -8,11 +8,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/adapter"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/controlplane"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/meteringconsumer"
@@ -76,11 +80,13 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 		t.Fatalf("meteringcost.NewPostgresAggregator() error = %v", err)
 	}
 	scope := meteringcost.Scope{TenantID: modelListTenantOneID, ProjectID: modelListProjectOneID}
+	costHandler := controlplane.NewHandlerWithServices("integration", nil, aggregator)
 
 	active := startExecutionRequest(ctx, t, recorder, meteringCostActiveRequestID)
 	if _, err := aggregator.Aggregate(ctx, scope, active.ID); !errors.Is(err, meteringcost.ErrNotTerminal) {
 		t.Fatalf("active request aggregate error = %v, want ErrNotTerminal", err)
 	}
+	assertMeteringCostAPIError(t, costHandler, scope, active.ID, http.StatusConflict, "REQUEST_NOT_TERMINAL", false)
 	forgedScope := meteringcost.Scope{
 		TenantID:  "7f000000-0000-4000-8000-000000000201",
 		ProjectID: "7f000000-0000-4000-8000-000000000202",
@@ -88,6 +94,7 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 	if _, err := aggregator.Aggregate(ctx, forgedScope, active.ID); !errors.Is(err, meteringcost.ErrNotFound) {
 		t.Fatalf("cross-scope aggregate error = %v, want ErrNotFound", err)
 	}
+	assertMeteringCostAPIError(t, costHandler, forgedScope, active.ID, http.StatusNotFound, "REQUEST_COST_NOT_FOUND", false)
 
 	multi := startExecutionRequest(ctx, t, recorder, meteringCostMultiRequestID)
 	multi, err = recorder.MarkRouting(ctx, multi)
@@ -136,6 +143,7 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 	if _, err := aggregator.Aggregate(ctx, scope, multi.ID); !errors.Is(err, meteringcost.ErrPending) {
 		t.Fatalf("partially priced aggregate error = %v, want ErrPending", err)
 	}
+	assertMeteringCostAPIError(t, costHandler, scope, multi.ID, http.StatusConflict, "REQUEST_COST_PENDING", true)
 	processMeteringCostEvent(ctx, t, processor, multiEvents[1])
 	multiCost, err := aggregator.Aggregate(ctx, scope, multi.ID)
 	if err != nil {
@@ -146,6 +154,19 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 			{id: failedAttempt.ID, status: execution.AttemptRetryableFailed, amount: 2_500_000},
 			{id: successfulAttempt.ID, status: execution.AttemptSucceeded, amount: 5_000_000},
 		})
+	apiCost := queryMeteringCostAPI(t, costHandler, scope, multi.ID)
+	if apiCost.LedgerEntryCount != 2 || len(apiCost.Attempts) != 2 ||
+		len(apiCost.Attempts[0].Entries) != 1 || len(apiCost.Attempts[1].Entries) != 1 {
+		t.Fatalf("cost API ledger shape = %+v", apiCost)
+	}
+	failedEntry := apiCost.Attempts[0].Entries[0]
+	succeededEntry := apiCost.Attempts[1].Entries[0]
+	if failedEntry.TokenType != metering.TokenTypeInput || failedEntry.PriceVersionID != meteringCostPriceAID ||
+		failedEntry.AmountMicros != 2_500_000 || succeededEntry.TokenType != metering.TokenTypeOutput ||
+		succeededEntry.PriceVersionID != meteringCostPriceBID || succeededEntry.AmountMicros != 5_000_000 ||
+		failedEntry.BillingUnit != metering.BillingUnitToken || succeededEntry.BillingUnit != metering.BillingUnitToken {
+		t.Fatalf("cost API entries = failed:%+v succeeded:%+v", failedEntry, succeededEntry)
+	}
 	var ledgerSchemaVersion int
 	var ledgerTokenizer, ledgerPhysicalModel string
 	var ledgerDeploymentVersion int64
@@ -230,6 +251,53 @@ func TestMeteringCostAggregationIncludesFailedPartialAndSuccessfulAttempts(t *te
 		[]expectedAttemptCost{{
 			id: terminalFailedAttempt.ID, status: execution.AttemptFailed, amount: 500_000,
 		}})
+}
+
+func queryMeteringCostAPI(
+	t *testing.T,
+	handler http.Handler,
+	scope meteringcost.Scope,
+	requestID string,
+) meteringcost.RequestCost {
+	t.Helper()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(
+		http.MethodGet, meteringCostAPIPath(scope, requestID), nil,
+	))
+	if response.Code != http.StatusOK {
+		t.Fatalf("cost API status = %d; body = %s", response.Code, response.Body)
+	}
+	var result meteringcost.RequestCost
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode cost API response: %v", err)
+	}
+	return result
+}
+
+func assertMeteringCostAPIError(
+	t *testing.T,
+	handler http.Handler,
+	scope meteringcost.Scope,
+	requestID string,
+	wantStatus int,
+	wantCode string,
+	wantRetry bool,
+) {
+	t.Helper()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(
+		http.MethodGet, meteringCostAPIPath(scope, requestID), nil,
+	))
+	if response.Code != wantStatus || !strings.Contains(response.Body.String(), wantCode) ||
+		((response.Header().Get("Retry-After") != "") != wantRetry) {
+		t.Fatalf("cost API error = %d/%v/%s, want %d/%s retry=%v",
+			response.Code, response.Header(), response.Body, wantStatus, wantCode, wantRetry)
+	}
+}
+
+func meteringCostAPIPath(scope meteringcost.Scope, requestID string) string {
+	return "/admin/v1/tenants/" + scope.TenantID + "/projects/" + scope.ProjectID +
+		"/requests/" + requestID + "/cost"
 }
 
 type expectedAttemptCost struct {

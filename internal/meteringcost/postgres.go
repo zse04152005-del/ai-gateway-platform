@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/meteringadjustment"
 )
 
 // Aggregator returns a complete request projection or ErrPending; it never
@@ -163,9 +164,19 @@ func loadLedger(
 ) ([]ledgerFact, error) {
 	rows, err := transaction.QueryContext(ctx, `
 		SELECT ledger.event_id::text, ledger.attempt_id::text,
-			price.currency, ledger.amount_micros
+			ledger.token_type, ledger.quantity, ledger.source,
+			ledger.observed_at, ledger.created_at,
+			ledger.price_version_id::text, price.currency,
+			rate.billing_unit, rate.unit_quantity, rate.unit_price_micros,
+			ledger.amount_micros, ledger.adjusts_event_id::text,
+			ledger.adjustment_origin, ledger.adjustment_reason,
+			ledger.adjustment_reference, ledger.adjustment_actor,
+			ledger.adjustment_result_quantity, ledger.adjustment_result_amount_micros
 		FROM app.usage_ledger_entries AS ledger
 		JOIN app.price_versions AS price ON price.id = ledger.price_version_id
+		JOIN app.price_version_rates AS rate
+		  ON rate.price_version_id = ledger.price_version_id
+		 AND rate.token_type = ledger.token_type
 		WHERE ledger.tenant_id = $1::uuid AND ledger.request_id = $2
 		ORDER BY ledger.attempt_id NULLS FIRST, ledger.id`, tenantID, requestID)
 	if err != nil {
@@ -176,11 +187,29 @@ func loadLedger(
 	for rows.Next() {
 		var fact ledgerFact
 		var attemptID sql.NullString
-		if err = rows.Scan(&fact.eventID, &attemptID, &fact.currency, &fact.amountMicros); err != nil {
+		var targetEventID, origin, reason, reference, actor sql.NullString
+		var correctedQuantity, correctedAmount sql.NullInt64
+		if err = rows.Scan(
+			&fact.eventID, &attemptID, &fact.tokenType, &fact.quantity, &fact.source,
+			&fact.observedAt, &fact.createdAt, &fact.priceVersionID, &fact.currency,
+			&fact.billingUnit, &fact.unitQuantity, &fact.unitPriceMicros, &fact.amountMicros,
+			&targetEventID, &origin, &reason, &reference, &actor,
+			&correctedQuantity, &correctedAmount,
+		); err != nil {
 			return nil, newCostError(ErrUnavailable, err)
 		}
 		if attemptID.Valid {
 			fact.attemptID = attemptID.String
+		}
+		if targetEventID.Valid || origin.Valid || reason.Valid || reference.Valid || actor.Valid ||
+			correctedQuantity.Valid || correctedAmount.Valid {
+			fact.adjustment = &LedgerAdjustment{
+				TargetEventID: targetEventID.String,
+				Origin:        meteringadjustment.Origin(origin.String),
+				Reason:        reason.String, Reference: reference.String, Actor: actor.String,
+				CorrectedQuantity:     correctedQuantity.Int64,
+				CorrectedAmountMicros: correctedAmount.Int64,
+			}
 		}
 		entries = append(entries, fact)
 	}

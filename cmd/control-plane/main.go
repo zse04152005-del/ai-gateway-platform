@@ -19,6 +19,7 @@ import (
 	"github.com/zse04152005-del/ai-gateway-platform/internal/config"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/controlplane"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/httpserver"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/meteringcost"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/observability"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/virtualkey"
 )
@@ -92,6 +93,10 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 	if err != nil {
 		return fmt.Errorf("create virtual credential manager: %w", err)
 	}
+	costAggregator, err := meteringcost.NewPostgresAggregator(database)
+	if err != nil {
+		return fmt.Errorf("create request cost aggregator: %w", err)
+	}
 	server, err := httpserver.NewServer(httpserver.Options{
 		ServiceName:        "control-plane",
 		Version:            version,
@@ -100,7 +105,7 @@ func runWithLogs(ctx context.Context, lookup config.LookupEnv, listen listenFunc
 		ErrorType:          "control_plane_error",
 		ReadHeaderTimeout:  cfg.HTTP.ReadHeaderTimeout,
 		ShutdownTimeout:    cfg.HTTP.ShutdownTimeout,
-		ApplicationHandler: controlplane.NewHandlerWithVirtualKeys(version, virtualKeyManager),
+		ApplicationHandler: controlplane.NewHandlerWithServices(version, virtualKeyManager, costAggregator),
 	})
 	if err != nil {
 		return fmt.Errorf("create control-plane server: %w", err)

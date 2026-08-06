@@ -14,15 +14,25 @@ const defaultVersion = "dev"
 
 // NewHandler creates the management-plane HTTP routes that are available at process bootstrap.
 func NewHandler(version string) http.Handler {
-	return newHandler(version, nil)
+	return newHandler(version, nil, nil)
 }
 
 // NewHandlerWithVirtualKeys creates the bootstrap routes plus the virtual credential lifecycle API.
 func NewHandlerWithVirtualKeys(version string, lifecycle virtualKeyLifecycle) http.Handler {
-	return newHandler(version, lifecycle)
+	return newHandler(version, lifecycle, nil)
 }
 
-func newHandler(version string, lifecycle virtualKeyLifecycle) http.Handler {
+// NewHandlerWithServices creates the management routes backed by durable
+// virtual-key lifecycle and request-cost services.
+func NewHandlerWithServices(
+	version string,
+	lifecycle virtualKeyLifecycle,
+	costs requestCostReader,
+) http.Handler {
+	return newHandler(version, lifecycle, costs)
+}
+
+func newHandler(version string, lifecycle virtualKeyLifecycle, costs requestCostReader) http.Handler {
 	version = strings.TrimSpace(version)
 	if version == "" {
 		version = defaultVersion
@@ -54,13 +64,46 @@ func newHandler(version string, lifecycle virtualKeyLifecycle) http.Handler {
 			Version: version,
 		})
 	})
-	if lifecycle != nil {
-		mux.Handle("/admin/v1/tenants/", newVirtualKeyHTTPHandler(lifecycle))
+	if lifecycle != nil || costs != nil {
+		var virtualKeys http.Handler
+		if lifecycle != nil {
+			virtualKeys = newVirtualKeyHTTPHandler(lifecycle)
+		}
+		var requestCosts http.Handler
+		if costs != nil {
+			requestCosts = newRequestCostHTTPHandler(costs)
+		}
+		mux.Handle("/admin/v1/tenants/", &tenantAdminHTTPHandler{
+			virtualKeys: virtualKeys, requestCosts: requestCosts,
+		})
 	}
 	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		apierror.WriteHTTP(writer, notFoundError, correlation.RequestID(request.Context()), "control_plane_error")
 	})
 	return mux
+}
+
+type tenantAdminHTTPHandler struct {
+	virtualKeys  http.Handler
+	requestCosts http.Handler
+}
+
+func (handler *tenantAdminHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	if _, ok := parseRequestCostRoute(request.URL.Path); ok {
+		if handler != nil && handler.requestCosts != nil {
+			handler.requestCosts.ServeHTTP(writer, request)
+			return
+		}
+		writeVirtualKeyError(writer, request, routeNotFoundError(nil))
+		return
+	}
+	if _, ok := parseVirtualKeyRoute(request.URL.Path); ok {
+		if handler != nil && handler.virtualKeys != nil {
+			handler.virtualKeys.ServeHTTP(writer, request)
+			return
+		}
+	}
+	writeVirtualKeyError(writer, request, routeNotFoundError(nil))
 }
 
 type statusResponse struct {

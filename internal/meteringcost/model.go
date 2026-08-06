@@ -6,9 +6,11 @@ import (
 	"math/big"
 	"regexp"
 	"sort"
+	"time"
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/meteringadjustment"
 )
 
 var (
@@ -26,6 +28,8 @@ var (
 	requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`)
 	uuidPattern      = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 	currencyPattern  = regexp.MustCompile(`^[A-Z]{3}$`)
+	auditPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$`)
+	reasonPattern    = regexp.MustCompile(`^[a-z][a-z0-9._:-]{0,127}$`)
 )
 
 // Scope is the trusted tenant/project boundary for one request aggregation.
@@ -49,9 +53,39 @@ type CurrencyTotal struct {
 	AmountMicros int64  `json:"amount_micros"`
 }
 
+// LedgerAdjustment explains one signed correction without exposing external evidence content.
+type LedgerAdjustment struct {
+	TargetEventID         string                    `json:"target_event_id"`
+	Origin                meteringadjustment.Origin `json:"origin"`
+	Reason                string                    `json:"reason"`
+	Reference             string                    `json:"reference"`
+	Actor                 string                    `json:"actor"`
+	CorrectedQuantity     int64                     `json:"corrected_quantity"`
+	CorrectedAmountMicros int64                     `json:"corrected_amount_micros"`
+}
+
+// LedgerEntry is one content-free immutable usage or correction fact with its locked rate.
+type LedgerEntry struct {
+	EventID         string               `json:"event_id"`
+	AttemptID       string               `json:"attempt_id,omitempty"`
+	TokenType       metering.TokenType   `json:"token_type"`
+	Quantity        int64                `json:"quantity"`
+	Source          metering.Source      `json:"source"`
+	ObservedAt      time.Time            `json:"observed_at"`
+	CreatedAt       time.Time            `json:"created_at"`
+	PriceVersionID  string               `json:"price_version_id"`
+	Currency        string               `json:"currency"`
+	BillingUnit     metering.BillingUnit `json:"billing_unit"`
+	UnitQuantity    int64                `json:"unit_quantity"`
+	UnitPriceMicros int64                `json:"unit_price_micros"`
+	AmountMicros    int64                `json:"amount_micros"`
+	Adjustment      *LedgerAdjustment    `json:"adjustment,omitempty"`
+}
+
 // CostBucket groups immutable Ledger entries without losing currency identity.
 type CostBucket struct {
 	LedgerEntryCount int             `json:"ledger_entry_count"`
+	Entries          []LedgerEntry   `json:"entries"`
 	Totals           []CurrencyTotal `json:"totals"`
 }
 
@@ -86,10 +120,20 @@ type attemptFact struct {
 }
 
 type ledgerFact struct {
-	eventID      string
-	attemptID    string
-	currency     string
-	amountMicros int64
+	eventID         string
+	attemptID       string
+	tokenType       metering.TokenType
+	quantity        int64
+	source          metering.Source
+	observedAt      time.Time
+	createdAt       time.Time
+	priceVersionID  string
+	currency        string
+	billingUnit     metering.BillingUnit
+	unitQuantity    int64
+	unitPriceMicros int64
+	amountMicros    int64
+	adjustment      *LedgerAdjustment
 }
 
 type currencyAccumulator map[string]*big.Int
@@ -126,16 +170,19 @@ func buildRequestCost(
 		attempts[index] = AttemptCost{
 			AttemptID: fact.id, AttemptNo: fact.number,
 			DeploymentID: fact.deploymentID, Status: fact.status,
-			CostBucket: CostBucket{Totals: make([]CurrencyTotal, 0)},
+			CostBucket: CostBucket{
+				Entries: make([]LedgerEntry, 0), Totals: make([]CurrencyTotal, 0),
+			},
 		}
 	}
 	requestLevelTotals := make(currencyAccumulator)
 	requestTotals := make(currencyAccumulator)
+	requestLevelEntries := make([]LedgerEntry, 0)
 	seenEvents := make(map[string]struct{}, len(ledgerFacts))
 	requestLevelEntryCount := 0
 	for _, fact := range ledgerFacts {
-		if !uuidPattern.MatchString(fact.eventID) || !currencyPattern.MatchString(fact.currency) ||
-			fact.amountMicros < -metering.MaximumExactInteger || fact.amountMicros > metering.MaximumExactInteger {
+		entry, entryErr := fact.entry()
+		if entryErr != nil {
 			return RequestCost{}, ErrUnavailable
 		}
 		if _, duplicate := seenEvents[fact.eventID]; duplicate {
@@ -145,6 +192,7 @@ func buildRequestCost(
 		requestTotals.add(fact.currency, fact.amountMicros)
 		if fact.attemptID == "" {
 			requestLevelEntryCount++
+			requestLevelEntries = append(requestLevelEntries, entry)
 			requestLevelTotals.add(fact.currency, fact.amountMicros)
 			continue
 		}
@@ -153,6 +201,7 @@ func buildRequestCost(
 			return RequestCost{}, ErrUnavailable
 		}
 		attempts[index].LedgerEntryCount++
+		attempts[index].Entries = append(attempts[index].Entries, entry)
 		attemptTotals[index].add(fact.currency, fact.amountMicros)
 	}
 	for index := range attempts {
@@ -176,10 +225,69 @@ func buildRequestCost(
 		Attempts: attempts,
 		RequestLevel: CostBucket{
 			LedgerEntryCount: requestLevelEntryCount,
+			Entries:          requestLevelEntries,
 			Totals:           requestLevelOrdered,
 		},
 		Totals: requestOrdered,
 	}, nil
+}
+
+func (fact ledgerFact) entry() (LedgerEntry, error) {
+	rate := metering.PriceRate{
+		TokenType: fact.tokenType, BillingUnit: fact.billingUnit,
+		UnitQuantity: fact.unitQuantity, UnitPriceMicros: fact.unitPriceMicros,
+	}
+	if !uuidPattern.MatchString(fact.eventID) ||
+		(fact.attemptID != "" && !uuidPattern.MatchString(fact.attemptID)) ||
+		!uuidPattern.MatchString(fact.priceVersionID) || !currencyPattern.MatchString(fact.currency) ||
+		fact.observedAt.IsZero() || fact.createdAt.IsZero() || rate.Validate() != nil ||
+		!validSource(fact.source) {
+		return LedgerEntry{}, ErrUnavailable
+	}
+	if fact.source == metering.SourceAdjustment {
+		if fact.quantity < -metering.MaximumExactInteger || fact.quantity > metering.MaximumExactInteger ||
+			fact.amountMicros < -metering.MaximumExactInteger || fact.amountMicros > metering.MaximumExactInteger ||
+			(fact.quantity == 0 && fact.amountMicros == 0) || !validAdjustment(fact.adjustment) {
+			return LedgerEntry{}, ErrUnavailable
+		}
+	} else if fact.quantity < 1 || fact.quantity > metering.MaximumExactInteger ||
+		fact.amountMicros < 0 || fact.amountMicros > metering.MaximumExactInteger || fact.adjustment != nil {
+		return LedgerEntry{}, ErrUnavailable
+	}
+	return LedgerEntry{
+		EventID: fact.eventID, AttemptID: fact.attemptID, TokenType: fact.tokenType,
+		Quantity: fact.quantity, Source: fact.source, ObservedAt: fact.observedAt,
+		CreatedAt: fact.createdAt, PriceVersionID: fact.priceVersionID, Currency: fact.currency,
+		BillingUnit: fact.billingUnit, UnitQuantity: fact.unitQuantity,
+		UnitPriceMicros: fact.unitPriceMicros, AmountMicros: fact.amountMicros,
+		Adjustment: cloneAdjustment(fact.adjustment),
+	}, nil
+}
+
+func validAdjustment(adjustment *LedgerAdjustment) bool {
+	return adjustment != nil && uuidPattern.MatchString(adjustment.TargetEventID) &&
+		adjustment.Origin.Valid() && reasonPattern.MatchString(adjustment.Reason) &&
+		auditPattern.MatchString(adjustment.Reference) && auditPattern.MatchString(adjustment.Actor) &&
+		adjustment.CorrectedQuantity >= 0 && adjustment.CorrectedQuantity <= metering.MaximumExactInteger &&
+		adjustment.CorrectedAmountMicros >= 0 &&
+		adjustment.CorrectedAmountMicros <= metering.MaximumExactInteger
+}
+
+func cloneAdjustment(adjustment *LedgerAdjustment) *LedgerAdjustment {
+	if adjustment == nil {
+		return nil
+	}
+	cloned := *adjustment
+	return &cloned
+}
+
+func validSource(source metering.Source) bool {
+	for _, supported := range metering.Sources() {
+		if source == supported {
+			return true
+		}
+	}
+	return false
 }
 
 func (totals currencyAccumulator) add(currency string, amount int64) {

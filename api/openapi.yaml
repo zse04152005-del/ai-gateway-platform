@@ -154,6 +154,55 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/v1/tenants/{tenantId}/projects/{projectId}/requests/{requestId}/cost:
+    get:
+      tags: [Requests]
+      operationId: getScopedRequestCost
+      summary: Get the finalized cost of an authorized request
+      description: >-
+        Rebuilds the complete request cost from immutable usage-ledger facts.
+        Failed, partial-failed, cancelled, and successful physical attempts are
+        all retained. Amounts use integer micros and totals remain separated by
+        currency. The response contains metering and adjustment metadata only;
+        prompts, responses, credentials, and raw evidence are never returned.
+      security:
+        - adminOidc: []
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - $ref: '#/components/parameters/ProjectIdPath'
+        - $ref: '#/components/parameters/RequestIdPath'
+      responses:
+        '200':
+          description: Complete immutable request-cost projection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestCost'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: >-
+            The request is not terminal, or a terminal request still has usage
+            events awaiting ledger consumption. REQUEST_COST_PENDING responses
+            include Retry-After.
+          headers:
+            Retry-After:
+              description: Seconds before retrying a pending cost projection
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          $ref: '#/components/responses/GatewayUnavailable'
   /admin/v1/tenants/{tenantId}/projects/{projectId}/virtual-keys:
     post:
       tags: [Virtual Keys]
@@ -308,6 +357,15 @@ components:
       schema:
         type: string
         format: uuid
+    RequestIdPath:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$'
     VirtualKeyIdPath:
       name: virtualKeyId
       in: path
@@ -820,6 +878,225 @@ components:
           type: [string, 'null']
         usage:
           $ref: '#/components/schemas/Usage'
+    CurrencyTotal:
+      type: object
+      additionalProperties: false
+      required: [currency, amount_micros]
+      properties:
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        amount_micros:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+    LedgerAdjustment:
+      type: object
+      additionalProperties: false
+      required:
+        - target_event_id
+        - origin
+        - reason
+        - reference
+        - actor
+        - corrected_quantity
+        - corrected_amount_micros
+      properties:
+        target_event_id:
+          type: string
+          format: uuid
+        origin:
+          type: string
+          enum: [manual, provider_reconciliation, system_repair]
+        reason:
+          type: string
+          pattern: '^[a-z][a-z0-9._:-]{0,127}$'
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Safe external audit reference; never raw evidence.
+        actor:
+          type: string
+          minLength: 1
+          maxLength: 200
+        corrected_quantity:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        corrected_amount_micros:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+    LedgerEntry:
+      type: object
+      additionalProperties: false
+      description: >-
+        Immutable priced usage fact. Adjustment entries carry signed quantity
+        and amount deltas plus the resulting absolute values in adjustment.
+      required:
+        - event_id
+        - token_type
+        - quantity
+        - source
+        - observed_at
+        - created_at
+        - price_version_id
+        - currency
+        - billing_unit
+        - unit_quantity
+        - unit_price_micros
+        - amount_micros
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        attempt_id:
+          type: string
+          format: uuid
+        token_type:
+          type: string
+          enum: [input, output, cache_read, cache_write, reasoning, audio_input, audio_output, image_input, image_output]
+        quantity:
+          type: integer
+          format: int64
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        source:
+          type: string
+          enum: [provider, estimated, reconciled, adjustment]
+        observed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        price_version_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        billing_unit:
+          type: string
+          enum: [token, image, second]
+        unit_quantity:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        unit_price_micros:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9007199254740991
+        amount_micros:
+          type: integer
+          format: int64
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        adjustment:
+          $ref: '#/components/schemas/LedgerAdjustment'
+    CostBucket:
+      type: object
+      additionalProperties: false
+      required: [ledger_entry_count, entries, totals]
+      properties:
+        ledger_entry_count:
+          type: integer
+          minimum: 0
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerEntry'
+        totals:
+          type: array
+          description: One total per currency, ordered by currency code.
+          items:
+            $ref: '#/components/schemas/CurrencyTotal'
+    AttemptCost:
+      type: object
+      additionalProperties: false
+      required:
+        - attempt_id
+        - attempt_no
+        - deployment_id
+        - status
+        - ledger_entry_count
+        - entries
+        - totals
+      properties:
+        attempt_id:
+          type: string
+          format: uuid
+        attempt_no:
+          type: integer
+          minimum: 1
+        deployment_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [succeeded, retryable_failed, failed, partial_failed, cancelled]
+        ledger_entry_count:
+          type: integer
+          minimum: 0
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerEntry'
+        totals:
+          type: array
+          description: One total per currency, ordered by currency code.
+          items:
+            $ref: '#/components/schemas/CurrencyTotal'
+    RequestCost:
+      type: object
+      additionalProperties: false
+      required:
+        - tenant_id
+        - project_id
+        - request_id
+        - status
+        - attempt_count
+        - ledger_entry_count
+        - attempts
+        - request_level
+        - totals
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+        status:
+          type: string
+          enum: [succeeded, partial_failed, failed, cancelled]
+        attempt_count:
+          type: integer
+          minimum: 0
+        ledger_entry_count:
+          type: integer
+          minimum: 0
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttemptCost'
+        request_level:
+          $ref: '#/components/schemas/CostBucket'
+        totals:
+          type: array
+          description: Complete request totals, separated and ordered by currency.
+          items:
+            $ref: '#/components/schemas/CurrencyTotal'
     ErrorEnvelope:
       type: object
       required: [error]
