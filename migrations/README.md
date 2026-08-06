@@ -50,7 +50,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action mi
 - `000017_create_usage_event_receipts` 创建与 Usage Ledger 延迟外键绑定的不可变消费 Receipt，以 eventId 主键和规范化 Payload SHA-256 区分合法重放与同 ID 不同事实冲突；Down 会删除全部幂等 Fingerprint，不能用于生产回滚。
 - `000018_add_usage_event_billing_unit` 为 Outbox 回填并锁定 `billing_unit=token`，使 Consumer 必须选择单位完全匹配的 PriceRate，避免 audio token 被误按秒计价；未来新增 second/image 事件必须用新迁移扩展有限契约。
 - `000019_add_usage_estimate_metadata` 允许 UsageEvent v1/v2 共存，并要求 v2 estimated 事实携带不可变 tokenizer、物理模型、Deployment 版本与 Provider 协议版本；Outbox 和 Ledger 都保留同一内容无关证据，Provider 事实禁止伪造本地估算元数据。
+- `000020_create_usage_ledger_adjustments` 允许只追加的 signed Adjustment 引用原始非 Adjustment 分录；可信 Scope、稳定幂等键、有限来源/原因、外部证据引用和操作者形成审计证据，数据库按原始行锁串行化并发修正，强制相同 Tenant/Request/Attempt/Token/PriceVersion 且最终数量和金额非负。
 - Up 重复执行时，迁移引擎返回 no-change 并以成功退出，不重复运行已登记版本。
 - Down 只用于开发与可控回滚，CLI 要求 `--confirm-development`，并在 `APP_ENV=production` 时强制拒绝。
 - 含数据丢失风险的回滚必须单独审批；生产优先采用修复性前滚，不能把 Down 当作常规发布手段。
-- CI 在临时 PostgreSQL 中执行：顺序校验 -> 空库 up -> 再次 up/no-change -> Schema/Consumer 约束测试 -> 最新 P10-T07 版本 down -> up，验证新库、兼容性和受控恢复。
+- CI 在临时 PostgreSQL 中执行：顺序校验 -> 空库 up -> 再次 up/no-change -> Schema/Consumer/Adjustment 约束测试 -> 最新 P10-T08 版本 down -> up，验证新库、兼容性和受控恢复。

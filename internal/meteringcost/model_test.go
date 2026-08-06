@@ -146,6 +146,37 @@ func TestBuildRequestCostRejectsUnsafeStoredFacts(t *testing.T) {
 	}
 }
 
+func TestBuildRequestCostIncludesSignedAdjustmentsButRejectsNegativeEffectiveCost(t *testing.T) {
+	scope := Scope{TenantID: testTenantID, ProjectID: testProjectID}
+	attempt := attemptFact{
+		id: "71000000-0000-4000-8000-000000000011", number: 1,
+		deploymentID: "71000000-0000-4000-8000-000000000021", status: execution.AttemptSucceeded,
+	}
+	entries := []ledgerFact{
+		{
+			eventID:   "71000000-0000-4000-8000-000000000031",
+			attemptID: attempt.id, currency: "USD", amountMicros: 10,
+		},
+		{
+			eventID:   "71000000-0000-4000-8000-000000000032",
+			attemptID: attempt.id, currency: "USD", amountMicros: -4,
+		},
+	}
+	result, err := buildRequestCost(
+		scope, testRequestID, execution.RequestSucceeded, 1, []attemptFact{attempt}, entries,
+	)
+	if err != nil || len(result.Totals) != 1 || result.Totals[0].AmountMicros != 6 ||
+		len(result.Attempts[0].Totals) != 1 || result.Attempts[0].Totals[0].AmountMicros != 6 {
+		t.Fatalf("signed adjustment aggregate = %+v, error = %v", result, err)
+	}
+	entries[1].amountMicros = -11
+	if _, err := buildRequestCost(
+		scope, testRequestID, execution.RequestSucceeded, 1, []attemptFact{attempt}, entries,
+	); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("negative effective total error = %v, want ErrUnavailable", err)
+	}
+}
+
 func TestScopeValidationAndTerminalStatusMatrix(t *testing.T) {
 	if (Scope{TenantID: testTenantID, ProjectID: testProjectID}).Validate() != nil {
 		t.Fatal("valid Scope was rejected")

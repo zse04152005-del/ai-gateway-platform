@@ -194,7 +194,13 @@ erDiagram
       text provider_protocol_version
       uuid price_version_id FK
       numeric amount
-      uuid adjusts_ledger_id FK
+      uuid adjusts_event_id FK
+      text adjustment_origin
+      text adjustment_reason
+      text adjustment_reference
+      text adjustment_actor
+      bigint adjustment_result_quantity
+      bigint adjustment_result_amount_micros
     }
     BUDGET_ACCOUNT {
       uuid id PK

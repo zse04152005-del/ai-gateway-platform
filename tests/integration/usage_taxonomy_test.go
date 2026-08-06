@@ -16,6 +16,7 @@ import (
 
 	"github.com/zse04152005-del/ai-gateway-platform/internal/execution"
 	"github.com/zse04152005-del/ai-gateway-platform/internal/metering"
+	"github.com/zse04152005-del/ai-gateway-platform/internal/meteringadjustment"
 )
 
 const usageTaxonomyRequestID = "integration-usage-taxonomy"
@@ -58,14 +59,41 @@ func TestUsageTaxonomySchemaParity(t *testing.T) {
 		t.Fatalf("execution.NewPostgresRecorder() error = %v", err)
 	}
 	_ = startExecutionRequest(ctx, t, recorder, usageTaxonomyRequestID)
+	adjuster, err := meteringadjustment.NewPostgresWriter(database, time.Now)
+	if err != nil {
+		t.Fatalf("meteringadjustment.NewPostgresWriter() error = %v", err)
+	}
+	adjustmentScope := meteringadjustment.Scope{
+		TenantID: modelListTenantOneID, ProjectID: modelListProjectOneID,
+	}
 
 	sequence := 0
 	for _, tokenType := range metering.TokenTypes() {
+		var targetEventID string
+		var targetQuantity int64
 		for _, source := range metering.Sources() {
 			sequence++
+			if source == metering.SourceAdjustment {
+				_, err = adjuster.Apply(ctx, meteringadjustment.Command{
+					Scope: adjustmentScope, EventID: usageTaxonomyEventID(sequence),
+					IdempotencyKey: "taxonomy:adjustment:" + string(tokenType),
+					TargetEventID:  targetEventID, CorrectedQuantity: targetQuantity + 1,
+					CorrectedAmountMicros: targetQuantity + 1,
+					Origin:                meteringadjustment.OriginSystemRepair, Reason: "taxonomy_contract_test",
+					Reference: "test:usage-taxonomy", Actor: "integration:usage-taxonomy",
+				})
+				if err != nil {
+					t.Fatalf("Apply(%s adjustment) error = %v", tokenType, err)
+				}
+				continue
+			}
 			insertUsageLedgerEntry(ctx, t, database, usageTaxonomyEventID(sequence), modelListTenantOneID,
 				usageTaxonomyRequestID, nil, string(tokenType), int64(sequence), string(source),
 				now.Add(time.Duration(sequence)*time.Microsecond))
+			if source == metering.SourceProvider {
+				targetEventID = usageTaxonomyEventID(sequence)
+				targetQuantity = int64(sequence)
+			}
 		}
 	}
 	wantCount := len(metering.TokenTypes()) * len(metering.Sources())

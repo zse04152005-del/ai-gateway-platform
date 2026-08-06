@@ -3,6 +3,7 @@ package meteringcost
 
 import (
 	"errors"
+	"math/big"
 	"regexp"
 	"sort"
 
@@ -91,7 +92,7 @@ type ledgerFact struct {
 	amountMicros int64
 }
 
-type currencyAccumulator map[string]int64
+type currencyAccumulator map[string]*big.Int
 
 func buildRequestCost(
 	scope Scope,
@@ -134,21 +135,17 @@ func buildRequestCost(
 	requestLevelEntryCount := 0
 	for _, fact := range ledgerFacts {
 		if !uuidPattern.MatchString(fact.eventID) || !currencyPattern.MatchString(fact.currency) ||
-			fact.amountMicros < 0 || fact.amountMicros > metering.MaximumExactInteger {
+			fact.amountMicros < -metering.MaximumExactInteger || fact.amountMicros > metering.MaximumExactInteger {
 			return RequestCost{}, ErrUnavailable
 		}
 		if _, duplicate := seenEvents[fact.eventID]; duplicate {
 			return RequestCost{}, ErrUnavailable
 		}
 		seenEvents[fact.eventID] = struct{}{}
-		if err := requestTotals.add(fact.currency, fact.amountMicros); err != nil {
-			return RequestCost{}, err
-		}
+		requestTotals.add(fact.currency, fact.amountMicros)
 		if fact.attemptID == "" {
 			requestLevelEntryCount++
-			if err := requestLevelTotals.add(fact.currency, fact.amountMicros); err != nil {
-				return RequestCost{}, err
-			}
+			requestLevelTotals.add(fact.currency, fact.amountMicros)
 			continue
 		}
 		index, exists := attemptIndex[fact.attemptID]
@@ -156,12 +153,22 @@ func buildRequestCost(
 			return RequestCost{}, ErrUnavailable
 		}
 		attempts[index].LedgerEntryCount++
-		if err := attemptTotals[index].add(fact.currency, fact.amountMicros); err != nil {
-			return RequestCost{}, err
-		}
+		attemptTotals[index].add(fact.currency, fact.amountMicros)
 	}
 	for index := range attempts {
-		attempts[index].Totals = attemptTotals[index].ordered()
+		orderedTotals, orderedErr := attemptTotals[index].ordered()
+		if orderedErr != nil {
+			return RequestCost{}, orderedErr
+		}
+		attempts[index].Totals = orderedTotals
+	}
+	requestLevelOrdered, orderedErr := requestLevelTotals.ordered()
+	if orderedErr != nil {
+		return RequestCost{}, orderedErr
+	}
+	requestOrdered, orderedErr := requestTotals.ordered()
+	if orderedErr != nil {
+		return RequestCost{}, orderedErr
 	}
 	return RequestCost{
 		TenantID: scope.TenantID, ProjectID: scope.ProjectID, RequestID: requestID,
@@ -169,22 +176,22 @@ func buildRequestCost(
 		Attempts: attempts,
 		RequestLevel: CostBucket{
 			LedgerEntryCount: requestLevelEntryCount,
-			Totals:           requestLevelTotals.ordered(),
+			Totals:           requestLevelOrdered,
 		},
-		Totals: requestTotals.ordered(),
+		Totals: requestOrdered,
 	}, nil
 }
 
-func (totals currencyAccumulator) add(currency string, amount int64) error {
-	current := totals[currency]
-	if current > metering.MaximumExactInteger-amount {
-		return ErrUnavailable
+func (totals currencyAccumulator) add(currency string, amount int64) {
+	current, exists := totals[currency]
+	if !exists {
+		current = new(big.Int)
+		totals[currency] = current
 	}
-	totals[currency] = current + amount
-	return nil
+	current.Add(current, big.NewInt(amount))
 }
 
-func (totals currencyAccumulator) ordered() []CurrencyTotal {
+func (totals currencyAccumulator) ordered() ([]CurrencyTotal, error) {
 	currencies := make([]string, 0, len(totals))
 	for currency := range totals {
 		currencies = append(currencies, currency)
@@ -192,9 +199,13 @@ func (totals currencyAccumulator) ordered() []CurrencyTotal {
 	sort.Strings(currencies)
 	result := make([]CurrencyTotal, 0, len(currencies))
 	for _, currency := range currencies {
-		result = append(result, CurrencyTotal{Currency: currency, AmountMicros: totals[currency]})
+		amount := totals[currency]
+		if amount.Sign() < 0 || amount.Cmp(big.NewInt(metering.MaximumExactInteger)) > 0 {
+			return nil, ErrUnavailable
+		}
+		result = append(result, CurrencyTotal{Currency: currency, AmountMicros: amount.Int64()})
 	}
-	return result
+	return result, nil
 }
 
 func terminalRequestStatus(status execution.RequestStatus) bool {
